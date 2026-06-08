@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+    
+    <!-- Neon Cyan Glow -->
+    <filter id="cyanGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Neon Amber Glow -->
+    <filter id="amberGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Linear Gradients for paths -->
+    <linearGradient id="cyanLineGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#22d3ee" />
+    </linearGradient>
+
+    <linearGradient id="amberLineGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#fbbf24" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background Card -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+  
+  <!-- Outer Hexagonal Border with animated vibe -->
+  <polygon points="256,40 440,146 440,358 256,464 72,358 72,146" 
+           fill="none" 
+           stroke="url(#cyanLineGrad)" 
+           stroke-width="12" 
+           stroke-opacity="0.2" />
+
+  <!-- Inner Glowing Hexagon -->
+  <polygon points="256,65 418,158 418,346 256,439 94,346 94,158" 
+           fill="none" 
+           stroke="url(#cyanLineGrad)" 
+           stroke-width="6" 
+           filter="url(#cyanGlow)" />
+
+  <!-- Trading Chart candlesticks (Background of the logo) -->
+  <g opacity="0.25">
+    <rect x="150" y="240" width="10" height="80" fill="#06b6d4" rx="2" />
+    <line x1="155" y1="210" x2="155" y2="340" stroke="#06b6d4" stroke-width="3" />
+
+    <rect x="200" y="160" width="10" height="120" fill="#22d3ee" rx="2" />
+    <line x1="205" y1="130" x2="205" y2="310" stroke="#22d3ee" stroke-width="3" />
+
+    <rect x="300" y="260" width="10" height="90" fill="#f59e0b" rx="2" />
+    <line x1="305" y1="230" x2="305" y2="380" stroke="#f59e0b" stroke-width="3" />
+  </g>
+
+  <!-- Glowing Trend Graph (The Bull Run!) -->
+  <path d="M 110,360 L 190,260 L 270,310 L 400,150" 
+        fill="none" 
+        stroke="url(#cyanLineGrad)" 
+        stroke-width="18" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"
+        filter="url(#cyanGlow)" />
+  
+  <!-- Arrow Head for Trend -->
+  <polygon points="400,150 365,155 395,185" 
+           fill="url(#cyanLineGrad)" 
+           filter="url(#cyanGlow)" />
+
+  <!-- Robot AI Brain / Circuit Eye (Center-Right overlay) -->
+  <circle cx="270" cy="310" r="28" fill="#020617" stroke="url(#amberLineGrad)" stroke-width="8" filter="url(#amberGlow)" />
+  <circle cx="270" cy="310" r="10" fill="#fbbf24" filter="url(#amberGlow)" />
+  
+  <!-- Sleek HUD lines -->
+  <path d="M 270,270 L 270,240" stroke="#fbbf24" stroke-width="4" stroke-linecap="round" opacity="0.8" />
+  <path d="M 305,310 L 335,310" stroke="#06b6d4" stroke-width="4" stroke-linecap="round" opacity="0.8" />
+  <path d="M 270,350 L 250,380" stroke="#06b6d4" stroke-width="4" stroke-linecap="round" opacity="0.8" />
+
+  <!-- Outer Ring Accent -->
+  <circle cx="256" cy="256" r="200" fill="none" stroke="#ffffff" stroke-width="2" stroke-dasharray="10 25" opacity="0.15" />
+</svg>
