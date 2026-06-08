@@ -51,6 +51,29 @@ const PORT = 3000;
 // Default Mock/Simulated historical positions & strategies for high fidelity
 const INITIAL_STRATEGIES: TradingStrategy[] = [
   {
+    id: "strat-dynamic-multi",
+    name: "Scanner Multi-Coppia Dinamico (Predefinito)",
+    description: "Algoritmo quantistico adattivo che scansiona continuamente BTC, ETH, SOL, XRP e ADA sul mercato per catturare all-in l'asset con migliore configurazione tecnica.",
+    symbol: "DYNAMIC",
+    timeframe: "5m",
+    indicators: [
+      { name: "RSI Momentum Scanner", type: "RSI", params: { period: 14 }, enabled: true },
+      { name: "Fast EMA Tracker", type: "EMA", params: { period: 10 }, enabled: true },
+      { name: "Slow EMA Tracker", type: "EMA", params: { period: 30 }, enabled: true }
+    ],
+    buyTriggerCondition: "RSI < 38",
+    sellTriggerCondition: "RSI > 65",
+    riskManagement: {
+      investmentAmount: 100,
+      stopLossPercent: 2.0,
+      trailingTakeProfitPercent: 0.8,
+      trailingActivationPercent: 2.5,
+      leverage: 1
+    },
+    aiNotes: "Questo algoritmo scansiona a intervalli regolari l'intero paniere di mercato di Bitget. Non appena una delle coppie incrocia in ipervenduto oppure mostra un'ottima forza relativa, apre un'azione di trading Spot allocando il budget. Risolve il problema del gating vincolato su singole coppie.",
+    createdAt: new Date(Date.now() - 86400000 * 1).toISOString()
+  },
+  {
     id: "strat-ai-scalper",
     name: "AI Multi-Indicator Scalper (Suggerito)",
     description: "Algoritmo ad alta frequenza che combina RSI ipervenduto/ipercomprato con l'indicatore EMA per catturare piccoli trend rapidi.",
@@ -164,7 +187,7 @@ const INITIAL_POSITIONS: Position[] = [
 // App In-Memory State
 let botStatus: BotStatus = BotStatus.STOPPED;
 let botMode: BotMode = BotMode.SIMULATED;
-let activeStrategyId: string | null = "strat-ai-scalper";
+let activeStrategyId: string | null = "strat-dynamic-multi";
 let strategies: TradingStrategy[] = [...INITIAL_STRATEGIES];
 let positions: Position[] = []; // Start with empty active positions to clean slate for €100 budget
 let tradeLogs: TradeLog[] = [...INITIAL_LOGS];
@@ -449,82 +472,119 @@ setInterval(async () => {
       if (activeStrategyId) {
         const activeStrat = strategies.find(s => s.id === activeStrategyId);
         if (activeStrat) {
-          // Only trade if we don't already have an open position for this symbol
-          const alreadyOpen = positions.some(p => p.symbol === activeStrat.symbol && p.status === "OPEN");
-          if (!alreadyOpen) {
-            const tick = tickers[activeStrat.symbol];
-            if (tick) {
-              const currentPrice = parseFloat(tick.lastPr);
-              const ind = indicatorTracking[activeStrat.symbol] || { rsi: 50, emaShort: currentPrice, emaLong: currentPrice };
+          const isDynamic = activeStrat.symbol === "DYNAMIC";
+          const symbolsToScan = isDynamic 
+            ? ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"]
+            : [activeStrat.symbol];
+
+          // We check the tickers to find the single best candidate matching requirements
+          let bestCandidate: {
+            symbol: string;
+            currentPrice: number;
+            triggerDetails: string;
+            score: number;
+          } | null = null;
+
+          for (const sym of symbolsToScan) {
+            // Only trade if we don't already have an open position for this symbol
+            const alreadyOpen = positions.some(p => p.symbol === sym && p.status === "OPEN");
+            if (alreadyOpen) continue;
+
+            const tick = tickers[sym];
+            if (!tick) continue;
+
+            const currentPrice = parseFloat(tick.lastPr);
+            const ind = indicatorTracking[sym] || { rsi: 50, emaShort: currentPrice, emaLong: currentPrice };
+
+            let metBuy = false;
+            let triggerDetails = "";
+            let score = 0; // The higher, the more it surpasses the strategy threshold
+
+            // Extract RSI buy condition threshold dynamically
+            if (activeStrat.buyTriggerCondition.toUpperCase().includes("RSI")) {
+              let threshold = 35; // Default reference
+              const rsiMatch = activeStrat.buyTriggerCondition.match(/RSI\s*<\s*(\d+)/i);
+              if (rsiMatch) {
+                threshold = parseInt(rsiMatch[1]);
+              }
               
-              let metBuy = false;
-              let triggerDetails = "";
-
-              if (activeStrat.buyTriggerCondition.includes("RSI")) {
-                // Formula check RSI < 35 AND Fast > Slow
-                if (ind.rsi < 36 && ind.emaShort > ind.emaLong) {
-                  metBuy = true;
-                  triggerDetails = `RSI ipervenduto (${ind.rsi.toFixed(1)}) + EMA Allineamento Rialzista`;
-                }
-              } else {
-                // Custom cross
-                if (ind.emaShort > ind.emaLong) {
-                  metBuy = true;
-                  triggerDetails = `Incrocio Medie Mobili (Fast ${ind.emaShort.toFixed(1)} > Slow ${ind.emaLong.toFixed(1)})`;
-                }
+              if (ind.rsi < threshold) {
+                metBuy = true;
+                triggerDetails = `RSI ipervenduto (${ind.rsi.toFixed(1)} < ${threshold})`;
+                // Score metric: how deep into oversold territory (deepest dip wins)
+                score = threshold - ind.rsi;
               }
+            } else {
+              // EMA crossover check
+              if (ind.emaShort > ind.emaLong) {
+                metBuy = true;
+                const crossoverPct = ((ind.emaShort - ind.emaLong) / ind.emaLong) * 100;
+                triggerDetails = `Incrocio Medie Mobili (EMA ${ind.emaShort.toFixed(1)} > ${ind.emaLong.toFixed(1)})`;
+                // Score is strength of crossover momentum
+                score = crossoverPct;
+              }
+            }
 
-              if (metBuy) {
-                // Determine actual simulation investment amount
-                let amountToInvest = activeStrat.riskManagement.investmentAmount;
-                if (botMode === BotMode.SIMULATED) {
-                  // ALL IN! Use the entire simulated balance
-                  amountToInvest = simulatedBalance;
-                }
-
-                if (amountToInvest <= 1) {
-                  // Skip if simulation wallet has no funds or insignificant funds
-                  return; 
-                }
-
-                const leverageVal = activeStrat.riskManagement.leverage || 1;
-                const qty = (amountToInvest * leverageVal) / currentPrice;
-                const stopLoss = currentPrice * (1 - activeStrat.riskManagement.stopLossPercent / 100);
-                const tpPrice = currentPrice * (1 + (activeStrat.riskManagement.trailingActivationPercent * 1.5) / 100);
-
-                const newPosition: Position = {
-                  id: "pos-" + Date.now(),
-                  strategyId: activeStrat.id,
-                  strategyName: activeStrat.name,
-                  symbol: activeStrat.symbol,
-                  type: PositionType.LONG,
-                  entryPrice: currentPrice,
-                  currentPrice: currentPrice,
-                  quantity: parseFloat(qty.toFixed(5)),
-                  investedAmount: amountToInvest,
-                  highestPriceReached: currentPrice,
-                  stopLossPrice: parseFloat(stopLoss.toFixed(symDecimalPoints(activeStrat.symbol))),
-                  takeProfitPrice: parseFloat(tpPrice.toFixed(symDecimalPoints(activeStrat.symbol))),
-                  pnl: 0,
-                  pnlPercent: 0,
-                  status: "OPEN",
-                  openedAt: new Date().toISOString(),
-                  isTrailingActive: false,
-                  leverage: leverageVal
+            if (metBuy) {
+              if (!bestCandidate || score > bestCandidate.score) {
+                bestCandidate = {
+                  symbol: sym,
+                  currentPrice,
+                  triggerDetails,
+                  score
                 };
-
-                // Decrease simulated balance since we went all-in
-                if (botMode === BotMode.SIMULATED) {
-                  simulatedBalance -= amountToInvest;
-                  if (simulatedBalance < 0) simulatedBalance = 0;
-                }
-
-                positions.unshift(newPosition);
-                addTradeLog("BUY", activeStrat.symbol, `🛒 ACQUISTO ALL-IN Simulato Eseguito! Aperta posizione Spot Leva ${leverageVal}x @ $${currentPrice.toLocaleString()} con ${triggerDetails} investendo oltre ${amountToInvest.toFixed(2)}€`, activeStrat.name);
-                
-                // Push Notification Mock
-                addTradeLog("WARNING", "PUSH", `Notifica Push: Bot Trading Bitget ha eseguito un ORDINE DI ACQUISTO ALL-IN su ${activeStrat.symbol} per €${amountToInvest.toFixed(2)}`);
               }
+            }
+          }
+
+          if (bestCandidate) {
+            const { symbol, currentPrice, triggerDetails } = bestCandidate;
+
+            // Determine actual simulation investment amount
+            let amountToInvest = activeStrat.riskManagement.investmentAmount;
+            if (botMode === BotMode.SIMULATED) {
+              // ALL IN! Use the entire simulated balance
+              amountToInvest = simulatedBalance;
+            }
+
+            if (amountToInvest > 1) {
+              const leverageVal = activeStrat.riskManagement.leverage || 1;
+              const qty = (amountToInvest * leverageVal) / currentPrice;
+              const stopLoss = currentPrice * (1 - activeStrat.riskManagement.stopLossPercent / 100);
+              const tpPrice = currentPrice * (1 + (activeStrat.riskManagement.trailingActivationPercent * 1.5) / 100);
+
+              const newPosition: Position = {
+                id: "pos-" + Date.now(),
+                strategyId: activeStrat.id,
+                strategyName: activeStrat.name,
+                symbol: symbol,
+                type: PositionType.LONG,
+                entryPrice: currentPrice,
+                currentPrice: currentPrice,
+                quantity: parseFloat(qty.toFixed(5)),
+                investedAmount: amountToInvest,
+                highestPriceReached: currentPrice,
+                stopLossPrice: parseFloat(stopLoss.toFixed(symDecimalPoints(symbol))),
+                takeProfitPrice: parseFloat(tpPrice.toFixed(symDecimalPoints(symbol))),
+                pnl: 0,
+                pnlPercent: 0,
+                status: "OPEN",
+                openedAt: new Date().toISOString(),
+                isTrailingActive: false,
+                leverage: leverageVal
+              };
+
+              // Decrease simulated balance
+              if (botMode === BotMode.SIMULATED) {
+                simulatedBalance -= amountToInvest;
+                if (simulatedBalance < 0) simulatedBalance = 0;
+              }
+
+              positions.unshift(newPosition);
+              addTradeLog("BUY", symbol, `🛒 ACQUISTO ${isDynamic ? "DINAMICO" : "ALL-IN"} Eseguito! Scelta Coppia Ottimale: ${symbol} @ $${currentPrice.toLocaleString()} con ${triggerDetails} (Punteggio: ${bestCandidate.score.toFixed(2)}) investendo €${amountToInvest.toFixed(2)}`, activeStrat.name);
+              
+              // Push Notification Mock
+              addTradeLog("WARNING", "PUSH", `Notifica Push: Bot Trading Bitget ha eseguito un ORDINE DI ACQUISTO su ${symbol} (Scansione Dinamica Ottimale) per €${amountToInvest.toFixed(2)}`);
             }
           }
         }
@@ -647,8 +707,13 @@ app.post("/api/bot/strategy/suggest", async (req, res) => {
   }
 
   try {
+    const isDynamic = coin === "DYNAMIC";
+    const pairText = isDynamic 
+      ? "di scansione multi-coppia dinamica su diverse crypto (BTCUSDT, ETHUSDT, SOLUSDT, XRPUSDT, ADAUSDT)"
+      : `per il ticker ${coin}USDT`;
+
     const prompt = `Sei un esperto astuto analista quantitativo quant-trader specializzato nelle API di trading di Bitget Spot e gestione algoritmica del rischio.
-Progetta una strategia di trading ottimizzata per il ticker ${coin}USDT sul timeframe di ${timeframe}, adatta a un profilo di rischio ${riskLevel} e con uno stile prioritario di ${style || 'Scalping'}.
+Progetta una strategia ${pairText} sul timeframe di ${timeframe}, adatta a un profilo di rischio ${riskLevel} e con uno stile prioritario di ${style || 'Scalping'}.
 
 Restituisci la strategia nel formato JSON strutturato richiesto, compilando ESCLUSIVAMENTE l'oggetto schema qui sotto, spiegando la logica in italiano e suggerendo valori ottimali e realistici per RSI, MACD, EMA.
 
@@ -656,7 +721,7 @@ STRUTTURA JSON ATTESA:
 {
   "name": "Nome breve della strategia accattivante e tecnico",
   "description": "Breve sintesi descrittiva in italiano di come funziona la strategia",
-  "symbol": "${coin}USDT",
+  "symbol": "${isDynamic ? "DYNAMIC" : `${coin}USDT`}",
   "timeframe": "${timeframe}",
   "buyTriggerCondition": "Condizione logica di acquisto leggibile (es: RSI < 35 AND Fast_EMA > Slow_EMA)",
   "sellTriggerCondition": "Condizione logica di vendita leggibile (es: RSI > 70)",
@@ -675,7 +740,7 @@ STRUTTURA JSON ATTESA:
       "enabled": true
     }
   ],
-  "aiNotes": "Spiega accuratamente in italiano perché hai consigliato questi parametri tecnici, la leva finanziaria scelta e come gli stop-loss dinamici proposti mitigheranno il rischio rispetto a questa specifica coppia su Bitget."
+  "aiNotes": "Spiega accuratamente in italiano perché hai consigliato questi parametri tecnici, la leva finanziaria scelta e come gli stop-loss dinamici proposti mitigheranno il rischio rispetto a questa specifica configurazione strategica su Bitget."
 }`;
 
     const response = await getAi().models.generateContent({

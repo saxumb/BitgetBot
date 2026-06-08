@@ -19,8 +19,6 @@ import {
   Sparkles, 
   RefreshCw, 
   Layers3, 
-  Smartphone, 
-  Monitor, 
   X, 
   Key, 
   Lock, 
@@ -64,7 +62,6 @@ interface InstantNotification {
 
 export default function App() {
   // Navigation / View State
-  const [isMobileMode, setIsMobileMode] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<"dashboard" | "strategies" | "logs">("dashboard");
 
   // Live state from backend API poll
@@ -238,10 +235,13 @@ export default function App() {
   // Submit custom strategy
   const handleCreateCustomStrategy = async (e: React.FormEvent) => {
     e.preventDefault();
+    const symbolField = customCoin === "DYNAMIC" ? "DYNAMIC" : `${customCoin}USDT`;
     const payload: Partial<TradingStrategy> = {
-      name: customName || `Strategia ${customCoin}/USDT`,
-      description: `Regola personalizzata con indicatori su ${customCoin}/USDT`,
-      symbol: `${customCoin}USDT`,
+      name: customName || (customCoin === "DYNAMIC" ? "Strategia Multi-Coppia Dinamica" : `Strategia ${customCoin}/USDT`),
+      description: customCoin === "DYNAMIC"
+        ? "Scansione continua delle coppie BTC, ETH, SOL, XRP, ADA con accaparramento dinamico della migliore opportunità."
+        : `Regola personalizzata con indicatori su ${customCoin}/USDT`,
+      symbol: symbolField,
       timeframe: "5m",
       buyTriggerCondition: customTriggerBuy,
       sellTriggerCondition: customTriggerSell,
@@ -486,23 +486,6 @@ export default function App() {
 
         {/* Global Quick Status Headers */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* View Mode Switching controls */}
-          <div className="bg-slate-900 p-0.5 rounded-xl border border-slate-800 flex items-center gap-1">
-            <button 
-              onClick={() => setIsMobileMode(false)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all focus:outline-none ${!isMobileMode ? "bg-slate-800 text-cyan-400 shadow-sm" : "text-slate-400 hover:text-slate-200"}`}
-            >
-              <Monitor className="h-3.5 w-3.5" />
-              Desktop View
-            </button>
-            <button 
-              onClick={() => setIsMobileMode(true)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all focus:outline-none ${isMobileMode ? "bg-slate-800 text-cyan-400 shadow-sm" : "text-slate-400 hover:text-slate-200"}`}
-            >
-              <Smartphone className="h-3.5 w-3.5" />
-              Mobile App View
-            </button>
-          </div>
 
           <button
             onClick={() => setIsSettingsOpen(true)}
@@ -527,7 +510,7 @@ export default function App() {
       <main className="flex-1 flex flex-col md:flex-row">
         
         {/* Render Mobile Device Simulation Mode */}
-        {isMobileMode ? (
+        {false && (
           <div className="flex-1 flex justify-center py-8 bg-slate-900/40 px-4 min-h-[700px]">
             <div className="relative w-full max-w-[375px] h-[780px] bg-slate-950 rounded-[48px] border-[10px] border-slate-800 shadow-2xl flex flex-col overflow-hidden">
               
@@ -646,7 +629,9 @@ export default function App() {
                           <div className="flex justify-between items-center">
                             <div>
                               <p className="text-xs font-bold text-white leading-tight">{strat.name}</p>
-                              <span className="text-[10px] text-slate-400 uppercase font-mono tracking-wider">{strat.symbol} • {strat.timeframe}</span>
+                              <span className="text-[10px] text-slate-400 uppercase font-mono tracking-wider">
+                                {strat.symbol === "DYNAMIC" ? "⚡ Multi-Coppia" : strat.symbol} • {strat.timeframe}
+                              </span>
                             </div>
                             {isActive && <div className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse"></div>}
                           </div>
@@ -837,7 +822,8 @@ export default function App() {
 
             </div>
           </div>
-        ) : (
+        )}
+        {true && (
           
           /* Full Desktop Web Monitor Dashboard Screen */
           <div className="flex-1 p-6 space-y-6 flex flex-col md:grid md:grid-cols-4 gap-6">
@@ -1069,6 +1055,7 @@ export default function App() {
                       <option value="SOL">SOL / USDT</option>
                       <option value="XRP">XRP / USDT</option>
                       <option value="ADA">ADA / USDT</option>
+                      <option value="DYNAMIC">✨ Scansione Multi-Coppia</option>
                     </select>
                   </div>
 
@@ -1244,7 +1231,9 @@ export default function App() {
                         <div className="pt-2 border-t border-slate-900/80 space-y-1.5 text-[11px] font-mono">
                           <div className="flex justify-between text-slate-400">
                             <span>Asset Monitor:</span>
-                            <span className="text-white-200">{strat.symbol}</span>
+                            <span className={strat.symbol === "DYNAMIC" ? "text-cyan-400 font-bold" : "text-slate-200"}>
+                              {strat.symbol === "DYNAMIC" ? "⚡ Multi-Coppia" : strat.symbol}
+                            </span>
                           </div>
                           <div className="flex justify-between text-slate-400">
                             <span>Soglie Stop Loss:</span>
@@ -1556,6 +1545,9 @@ export default function App() {
                       <option value="BTC">BTC / USDT</option>
                       <option value="ETH">ETH / USDT</option>
                       <option value="SOL">SOL / USDT</option>
+                      <option value="XRP">XRP / USDT</option>
+                      <option value="ADA">ADA / USDT</option>
+                      <option value="DYNAMIC">✨ Scansione Dinamica Multi-Coppia</option>
                     </select>
                   </div>
                   <div>
