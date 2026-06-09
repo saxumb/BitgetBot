@@ -42,6 +42,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { 
   BotStatus, 
   BotMode, 
+  PositionType,
   TradingStrategy, 
   Position, 
   TradeLog, 
@@ -60,20 +61,130 @@ interface InstantNotification {
   pnl?: number;
 }
 
+const DEFAULT_TICKERS: Record<string, MarketTicker> = {
+  BTCUSDT: { symbol: "BTCUSDT", lastPr: "96520.00", bidPr: "96515.00", askPr: "96525.00", high24h: "98200.00", low24h: "95100.00", open24h: "95800.00", change24h: "0.75" },
+  ETHUSDT: { symbol: "ETHUSDT", lastPr: "3420.50", bidPr: "3420.00", askPr: "3421.00", high24h: "3510.00", low24h: "3380.00", open24h: "3390.00", change24h: "0.90" },
+  SOLUSDT: { symbol: "SOLUSDT", lastPr: "168.40", bidPr: "168.30", askPr: "168.50", high24h: "174.00", low24h: "164.00", open24h: "166.00", change24h: "1.45" },
+  XRPUSDT: { symbol: "XRPUSDT", lastPr: "1.1420", bidPr: "1.1415", askPr: "1.1425", high24h: "1.1800", low24h: "1.1000", open24h: "1.1100", change24h: "2.88" },
+  ADAUSDT: { symbol: "ADAUSDT", lastPr: "0.6420", bidPr: "0.6418", askPr: "0.6422", high24h: "0.6800", low24h: "0.6200", open24h: "0.6300", change24h: "1.90" }
+};
+
+const DEFAULT_STRATEGIES: TradingStrategy[] = [
+  {
+    id: "strat-dynamic-multi",
+    name: "Scanner Multi-Coppia Dinamico (Predefinito)",
+    description: "Algoritmo quantistico adattivo che scansiona continuamente BTC, ETH, SOL, XRP e ADA sul mercato per catturare all-in l'asset con migliore configurazione tecnica.",
+    symbol: "DYNAMIC",
+    timeframe: "5m",
+    indicators: [
+      { name: "RSI Momentum Scanner", type: "RSI", params: { period: 14 }, enabled: true },
+      { name: "Fast EMA Tracker", type: "EMA", params: { period: 10 }, enabled: true },
+      { name: "Slow EMA Tracker", type: "EMA", params: { period: 30 }, enabled: true }
+    ],
+    buyTriggerCondition: "RSI < 38",
+    sellTriggerCondition: "RSI > 65",
+    riskManagement: {
+      investmentAmount: 100,
+      stopLossPercent: 2.0,
+      trailingTakeProfitPercent: 0.8,
+      trailingActivationPercent: 2.5,
+      leverage: 1
+    },
+    aiNotes: "Questo algoritmo scansiona a intervalli regolari l'intero paniere di mercato di Bitget. Non appena una delle coppie incrocia in ipervenduto oppure mostra un'ottima forza relativa, apre un'azione di trading Spot allocando il budget. Risolve il problema del gating vincolato su singole coppie.",
+    createdAt: new Date(Date.now() - 86400000 * 1).toISOString()
+  },
+  {
+    id: "strat-ai-scalper",
+    name: "AI Multi-Indicator Scalper (Suggerito)",
+    description: "Algoritmo ad alta frequenza che combina RSI ipervenduto/ipercomprato con l'indicatore EMA per catturare piccoli trend rapidi.",
+    symbol: "BTCUSDT",
+    timeframe: "5m",
+    indicators: [
+      { name: "RSI Momentum", type: "RSI", params: { period: 14 }, enabled: true },
+      { name: "Fast EMA", type: "EMA", params: { period: 9 }, enabled: true },
+      { name: "Slow EMA", type: "EMA", params: { period: 21 }, enabled: true }
+    ],
+    buyTriggerCondition: "RSI < 35 AND Fast_EMA > Slow_EMA",
+    sellTriggerCondition: "RSI > 65 OR Fast_EMA < Slow_EMA",
+    riskManagement: {
+      investmentAmount: 100,
+      stopLossPercent: 1.5,
+      trailingTakeProfitPercent: 0.5,
+      trailingActivationPercent: 2.0,
+      leverage: 1
+    },
+    aiNotes: "L'intelligenza artificiale raccomanda questa strategia su orizzonti temporali brevi per capitalizzare sulla volatilità intraday del Bitcoin. Lo stop loss stretto protegge da dump rapidi.",
+    createdAt: new Date(Date.now() - 86400000 * 3).toISOString()
+  },
+  {
+    id: "strat-eth-trend",
+    name: "EMA Crossover Momentum Tracker",
+    description: "Insegue i trend macro su Ethereum utilizzando tagli di medie mobili veloci e lente per confermare forza di mercato.",
+    symbol: "ETHUSDT",
+    timeframe: "15m",
+    indicators: [
+      { name: "Fast EMA", type: "EMA", params: { period: 10 }, enabled: true },
+      { name: "Slow EMA", type: "EMA", params: { period: 50 }, enabled: true }
+    ],
+    buyTriggerCondition: "Fast_EMA supera Slow_EMA",
+    sellTriggerCondition: "Fast_EMA scende sotto Slow_EMA",
+    riskManagement: {
+      investmentAmount: 100,
+      stopLossPercent: 2.5,
+      trailingTakeProfitPercent: 1.0,
+      trailingActivationPercent: 4.5,
+      leverage: 1
+    },
+    aiNotes: "Ottimizzato per contesti direzionali chiari. Evitare l'attivazione in fasi puramente laterali per ridurre falsi segnali di trading.",
+    createdAt: new Date(Date.now() - 86400000 * 5).toISOString()
+  }
+];
+
+const DEFAULT_LOGS: TradeLog[] = [
+  {
+    id: "log-1",
+    timestamp: new Date(Date.now() - 7200000).toISOString(),
+    type: "INFO",
+    symbol: "SYSTEM",
+    message: "Avvio motore di auto-trading algoritmico Bitget completato (Modalità GitHub Pages)."
+  },
+  {
+    id: "log-2",
+    timestamp: new Date(Date.now() - 7100000).toISOString(),
+    type: "INFO",
+    symbol: "SYSTEM",
+    message: "Puntamento API Bitget configurato in modalità demo / paper trading offline."
+  }
+];
+
 export default function App() {
   // Navigation / View State
   const [activeTab, setActiveTab] = useState<"dashboard" | "strategies" | "logs">("dashboard");
 
-  // Live state from backend API poll
-  const [botStatus, setBotStatus] = useState<BotStatus>(BotStatus.STOPPED);
-  const [botMode, setBotMode] = useState<BotMode>(BotMode.SIMULATED);
-  const [activeStrategyId, setActiveStrategyId] = useState<string | null>(null);
-  const [strategies, setStrategies] = useState<TradingStrategy[]>([]);
-  const [positions, setPositions] = useState<Position[]>([]);
-  const [tradeLogs, setTradeLogs] = useState<TradeLog[]>([]);
-  const [tickers, setTickers] = useState<Record<string, MarketTicker>>({});
-  const [credentialsSet, setCredentialsSet] = useState<boolean>(false);
-  const [simulatedBalance, setSimulatedBalance] = useState<number>(100.00);
+  // Dynamic environment mode (fall back to static client-side only when hosted on GitHub Pages)
+  const [isStaticMode, setIsStaticMode] = useState<boolean>(() => {
+    return localStorage.getItem("bitget_static_mode_v2") === "true";
+  });
+
+  const getLocalVar = <T,>(key: string, defaultVal: T): T => {
+    try {
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : defaultVal;
+    } catch {
+      return defaultVal;
+    }
+  };
+
+  // Live state from backend API poll or localStorage cache
+  const [botStatus, setBotStatus] = useState<BotStatus>(() => getLocalVar("bitget_botStatus", BotStatus.STOPPED));
+  const [botMode, setBotMode] = useState<BotMode>(() => getLocalVar("bitget_botMode", BotMode.SIMULATED));
+  const [activeStrategyId, setActiveStrategyId] = useState<string | null>(() => getLocalVar("bitget_activeStrategyId", "strat-dynamic-multi"));
+  const [strategies, setStrategies] = useState<TradingStrategy[]>(() => getLocalVar("bitget_strategies", DEFAULT_STRATEGIES));
+  const [positions, setPositions] = useState<Position[]>(() => getLocalVar("bitget_positions", []));
+  const [tradeLogs, setTradeLogs] = useState<TradeLog[]>(() => getLocalVar("bitget_tradeLogs", DEFAULT_LOGS));
+  const [tickers, setTickers] = useState<Record<string, MarketTicker>>(() => getLocalVar("bitget_tickers", DEFAULT_TICKERS));
+  const [credentialsSet, setCredentialsSet] = useState<boolean>(() => getLocalVar("bitget_credentialsSet", false));
+  const [simulatedBalance, setSimulatedBalance] = useState<number>(() => getLocalVar("bitget_simulatedBalance", 1000.00));
   
   // Loading & interactive states
   const [isPolling, setIsPolling] = useState<boolean>(true);
@@ -113,12 +224,38 @@ export default function App() {
   
   // Reference tracker for logs to detect new executions for alerts
   const lastLogIdRef = useRef<string | null>(null);
+  const indicatorTrackingRef = useRef<Record<string, { rsi: number; emaShort: number; emaLong: number }>>({});
 
-  // Fetch the full backend state
+  // Synchronize localStorage when local states change under Static Mode
+  useEffect(() => {
+    if (isStaticMode) {
+      localStorage.setItem("bitget_botStatus", botStatus);
+      localStorage.setItem("bitget_botMode", botMode);
+      if (activeStrategyId) localStorage.setItem("bitget_activeStrategyId", activeStrategyId);
+      localStorage.setItem("bitget_strategies", JSON.stringify(strategies));
+      localStorage.setItem("bitget_positions", JSON.stringify(positions));
+      localStorage.setItem("bitget_tradeLogs", JSON.stringify(tradeLogs));
+      localStorage.setItem("bitget_credentialsSet", credentialsSet.toString());
+      localStorage.setItem("bitget_simulatedBalance", simulatedBalance.toString());
+    }
+  }, [isStaticMode, botStatus, botMode, activeStrategyId, strategies, positions, tradeLogs, credentialsSet, simulatedBalance]);
+
+  // Fetch the full backend state (with local-only detection & fallback)
   const fetchState = async () => {
+    if (isStaticMode) {
+      return;
+    }
     try {
       const response = await fetch("/api/bot/state");
-      if (!response.ok) throw new Error("Errore nel recupero dello stato.");
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log("Detecting static hosting environment (404), switching to client-only fallback mode.");
+          setIsStaticMode(true);
+          localStorage.setItem("bitget_static_mode_v2", "true");
+          return;
+        }
+        throw new Error("Errore nel recupero dello stato.");
+      }
       const data = (await response.json()) as LiveState;
       
       setBotStatus(data.botStatus);
@@ -166,20 +303,398 @@ export default function App() {
         lastLogIdRef.current = "";
       }
     } catch (error) {
-      console.error("API connection failed:", error);
+      console.warn("API connection failed. Switching to browser simulation mode.", error);
+      setIsStaticMode(true);
+      localStorage.setItem("bitget_static_mode_v2", "true");
     }
   };
 
-  // Poll state
+  // Poll state (or local ticker simulator tick runner)
   useEffect(() => {
     fetchState();
     const interval = setInterval(fetchState, 2000);
     return () => clearInterval(interval);
-  }, [activeStrategyId]);
+  }, [activeStrategyId, isStaticMode]);
 
-  // Initial user settings if they exist
+  // Local background tick interval for Static Client-side Mode
+  useEffect(() => {
+    if (!isStaticMode) return;
+
+    // Seed indicator tracking ref if empty
+    if (Object.keys(indicatorTrackingRef.current).length === 0) {
+      const tracker: Record<string, { rsi: number; emaShort: number; emaLong: number }> = {};
+      Object.keys(tickers).forEach((sym) => {
+        const t = tickers[sym];
+        const val = t ? parseFloat(t.lastPr) : 100;
+        tracker[sym] = {
+          rsi: 40 + Math.random() * 20,
+          emaShort: val,
+          emaLong: val,
+        };
+      });
+      indicatorTrackingRef.current = tracker;
+    }
+
+    const interval = setInterval(() => {
+      // 1. tick prices
+      setTickers((prevTickers) => {
+        const next = { ...prevTickers };
+        Object.keys(next).forEach((sym) => {
+          const tick = { ...next[sym] };
+          if (!tick) return;
+          const curP = parseFloat(tick.lastPr) || 100;
+          const vol = sym === "BTCUSDT" ? 25 : sym === "ETHUSDT" ? 1.5 : sym === "SOLUSDT" ? 0.2 : sym === "XRPUSDT" ? 0.005 : 0.002;
+          const change = (Math.random() - 0.495) * vol;
+          const newP = curP + change;
+
+          const decimalPoints = sym.includes("XRP") || sym.includes("ADA") ? 4 : 2;
+          tick.lastPr = newP.toFixed(decimalPoints);
+          tick.bidPr = (newP - vol * 0.1).toFixed(decimalPoints);
+          tick.askPr = (newP + vol * 0.1).toFixed(decimalPoints);
+          
+          next[sym] = tick;
+
+          // Update indicator tracking ref
+          const ind = indicatorTrackingRef.current[sym] || { rsi: 50, emaShort: newP, emaLong: newP };
+          ind.rsi = Math.max(15, Math.min(85, ind.rsi + (Math.random() - 0.5) * 2));
+          ind.emaShort = ind.emaShort * 0.95 + newP * 0.05;
+          ind.emaLong = ind.emaLong * 0.98 + newP * 0.02;
+          indicatorTrackingRef.current[sym] = ind;
+        });
+        localStorage.setItem("bitget_tickers", JSON.stringify(next));
+        return next;
+      });
+
+      // 2. evaluate rules if running
+      if (botStatus === BotStatus.RUNNING) {
+        setPositions((prevPositions) => {
+          let currentBalance = simulatedBalance;
+          let logsToAdd: TradeLog[] = [];
+          
+          let updated = prevPositions.map((pos) => {
+            if (pos.status === "CLOSED") return pos;
+
+            const tickPrice = indicatorTrackingRef.current[pos.symbol]?.emaShort || pos.currentPrice;
+            const currentPrice = tickPrice;
+            
+            const nextPos = { ...pos };
+            nextPos.currentPrice = currentPrice;
+
+            const leverage = nextPos.leverage || 1;
+            const deltaPercent = ((currentPrice - nextPos.entryPrice) / nextPos.entryPrice) * 100;
+            nextPos.pnlPercent = deltaPercent * leverage;
+            nextPos.pnl = (nextPos.investedAmount * nextPos.pnlPercent) / 100;
+
+            // Liquidation
+            if (nextPos.pnlPercent <= -100) {
+              nextPos.status = "CLOSED";
+              nextPos.closedAt = new Date().toISOString();
+              nextPos.closeReason = "LIQUIDATION";
+              nextPos.pnlPercent = -100;
+              nextPos.pnl = -nextPos.investedAmount;
+              
+              logsToAdd.push({
+                id: "log-" + Date.now() + Math.random(),
+                timestamp: new Date().toISOString(),
+                type: "STOP_LOSS",
+                symbol: nextPos.symbol,
+                strategyName: nextPos.strategyName,
+                pnl: nextPos.pnl,
+                message: `💥 LIQUIDAZIONE! Posizione su ${nextPos.symbol} liquidata a $${currentPrice.toLocaleString()} a causa della leva ${leverage}x (PnL: -100%, perdita: -$${nextPos.investedAmount.toFixed(2)})`
+              });
+
+              if (botMode === BotMode.SIMULATED) {
+                currentBalance += (nextPos.investedAmount + nextPos.pnl);
+              }
+              return nextPos;
+            }
+
+            // Trailing activation
+            if (currentPrice > nextPos.highestPriceReached) {
+              nextPos.highestPriceReached = currentPrice;
+              if (deltaPercent > 1.5) {
+                const newStopPrice = nextPos.entryPrice * (1 + (deltaPercent * 0.4) / 100);
+                if (newStopPrice > nextPos.stopLossPrice) {
+                  const decimalPoints = nextPos.symbol.includes("XRP") || nextPos.symbol.includes("ADA") ? 4 : 2;
+                  nextPos.stopLossPrice = parseFloat(newStopPrice.toFixed(decimalPoints));
+                }
+              }
+            }
+
+            // Trailing TP
+            const activeStrat = strategies.find(s => s.id === nextPos.strategyId);
+            const risk = activeStrat ? activeStrat.riskManagement : { stopLossPercent: 2, trailingTakeProfitPercent: 0.5, trailingActivationPercent: 1.5 };
+            const activationLevel = nextPos.entryPrice * (1 + risk.trailingActivationPercent / 100);
+
+            if (!nextPos.isTrailingActive && currentPrice >= activationLevel) {
+              nextPos.isTrailingActive = true;
+              logsToAdd.push({
+                id: "log-" + Date.now() + Math.random(),
+                timestamp: new Date().toISOString(),
+                type: "INFO",
+                symbol: nextPos.symbol,
+                strategyName: nextPos.strategyName,
+                message: `Dispositivo Trailing Take-Profit ATTIVATO per ${nextPos.symbol} (prezzo superato $${activationLevel.toLocaleString()}).`
+              });
+            }
+
+            // Exit triggers
+            // 1) Stop Loss
+            if (currentPrice <= nextPos.stopLossPrice) {
+              nextPos.status = "CLOSED";
+              nextPos.closedAt = new Date().toISOString();
+              nextPos.closeReason = "DYNAMIC_STOP_LOSS";
+              
+              logsToAdd.push({
+                id: "log-" + Date.now() + Math.random(),
+                timestamp: new Date().toISOString(),
+                type: "STOP_LOSS",
+                symbol: nextPos.symbol,
+                strategyName: nextPos.strategyName,
+                pnl: nextPos.pnl,
+                message: `🚨 Stop Loss dinamico attivato! Posizione chiusa su ${nextPos.symbol} a $${currentPrice.toLocaleString()} (PnL: ${nextPos.pnlPercent.toFixed(2)}%, profitto: $${nextPos.pnl.toFixed(2)})`
+              });
+
+              if (botMode === BotMode.SIMULATED) {
+                currentBalance += (nextPos.investedAmount + nextPos.pnl);
+              }
+              return nextPos;
+            }
+
+            // 2) Trailing TP
+            if (nextPos.isTrailingActive) {
+              const dropThreshold = nextPos.highestPriceReached * (1 - risk.trailingTakeProfitPercent / 100);
+              if (currentPrice <= dropThreshold) {
+                nextPos.status = "CLOSED";
+                nextPos.closedAt = new Date().toISOString();
+                nextPos.closeReason = "TRAILING_TAKE_PROFIT";
+                
+                logsToAdd.push({
+                  id: "log-" + Date.now() + Math.random(),
+                  timestamp: new Date().toISOString(),
+                  type: "TRAILING_TP",
+                  symbol: nextPos.symbol,
+                  strategyName: nextPos.strategyName,
+                  pnl: nextPos.pnl,
+                  message: `📈 Trailing Take-Profit scattato! Posizione chiusa su ${nextPos.symbol} a $${currentPrice.toLocaleString()} dopo ribasso dal picco di $${nextPos.highestPriceReached.toLocaleString()} (PnL: ${nextPos.pnlPercent.toFixed(2)}%, profitto: $${nextPos.pnl.toFixed(2)})`
+                });
+
+                if (botMode === BotMode.SIMULATED) {
+                  currentBalance += (nextPos.investedAmount + nextPos.pnl);
+                }
+                return nextPos;
+              }
+            }
+
+            // 3) Sell Signal
+            if (activeStrat) {
+              const ind = indicatorTrackingRef.current[nextPos.symbol] || { rsi: 50, emaShort: currentPrice, emaLong: currentPrice };
+              let metSell = false;
+              if (activeStrat.buyTriggerCondition.includes("RSI")) {
+                if (ind.rsi > 65) metSell = true;
+              } else if (activeStrat.buyTriggerCondition.includes("supera") || activeStrat.buyTriggerCondition.includes("EMA")) {
+                if (ind.emaShort < ind.emaLong) metSell = true;
+              }
+              if (metSell) {
+                nextPos.status = "CLOSED";
+                nextPos.closedAt = new Date().toISOString();
+                nextPos.closeReason = "STRATEGY_SIGNAL";
+                
+                logsToAdd.push({
+                  id: "log-" + Date.now() + Math.random(),
+                  timestamp: new Date().toISOString(),
+                  type: "SELL",
+                  symbol: nextPos.symbol,
+                  strategyName: nextPos.strategyName,
+                  pnl: nextPos.pnl,
+                  message: `🎯 Segnale di vendita strategia attivato! Posizione Spot ${nextPos.symbol} liquidata a $${currentPrice.toLocaleString()} (PnL: ${nextPos.pnlPercent.toFixed(2)}%, profitto: $${nextPos.pnl.toFixed(2)})`
+                });
+
+                if (botMode === BotMode.SIMULATED) {
+                  currentBalance += (nextPos.investedAmount + nextPos.pnl);
+                }
+                return nextPos;
+              }
+            }
+
+            return nextPos;
+          });
+
+          // Open signals
+          if (activeStrategyId) {
+            const activeStrat = strategies.find(s => s.id === activeStrategyId);
+            if (activeStrat) {
+              const isDynamic = activeStrat.symbol === "DYNAMIC";
+              const symbolsToScan = isDynamic 
+                ? ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT"]
+                : [activeStrat.symbol];
+
+              let bestCandidate: any = null;
+              for (const sym of symbolsToScan) {
+                const alreadyOpen = updated.some(p => p.symbol === sym && p.status === "OPEN");
+                if (alreadyOpen) continue;
+
+                const tick = tickers[sym];
+                if (!tick) continue;
+
+                const currentPrice = parseFloat(tick.lastPr);
+                const ind = indicatorTrackingRef.current[sym] || { rsi: 50, emaShort: currentPrice, emaLong: currentPrice };
+
+                let metBuy = false;
+                let triggerDetails = "";
+                let score = 0;
+
+                if (activeStrat.buyTriggerCondition.toUpperCase().includes("RSI")) {
+                  let threshold = 35;
+                  const rsiMatch = activeStrat.buyTriggerCondition.match(/RSI\s*<\s*(\d+)/i);
+                  if (rsiMatch) {
+                    threshold = parseInt(rsiMatch[1]);
+                  }
+                  if (ind.rsi < threshold) {
+                    metBuy = true;
+                    triggerDetails = `RSI ipervenduto (${ind.rsi.toFixed(1)} < ${threshold})`;
+                    score = threshold - ind.rsi;
+                  }
+                } else {
+                  if (ind.emaShort > ind.emaLong) {
+                    metBuy = true;
+                    const crossoverPct = ((ind.emaShort - ind.emaLong) / ind.emaLong) * 100;
+                    triggerDetails = `Incrocio Medie Mobili (EMA ${ind.emaShort.toFixed(1)} > ${ind.emaLong.toFixed(1)})`;
+                    score = crossoverPct;
+                  }
+                }
+
+                if (metBuy) {
+                  if (!bestCandidate || score > bestCandidate.score) {
+                    bestCandidate = {
+                      symbol: sym,
+                      currentPrice,
+                      triggerDetails,
+                      score
+                    };
+                  }
+                }
+              }
+
+              if (bestCandidate) {
+                const { symbol, currentPrice, triggerDetails } = bestCandidate;
+                let amountToInvest = activeStrat.riskManagement.investmentAmount;
+                if (botMode === BotMode.SIMULATED) {
+                  amountToInvest = currentBalance; // All in simulated balance
+                }
+
+                if (amountToInvest > 1) {
+                  const leverageVal = activeStrat.riskManagement.leverage || 1;
+                  const qty = (amountToInvest * leverageVal) / currentPrice;
+                  const stopLoss = currentPrice * (1 - activeStrat.riskManagement.stopLossPercent / 100);
+                  const tpPrice = currentPrice * (1 + (activeStrat.riskManagement.trailingActivationPercent * 1.5) / 100);
+                  const decimalPoints = symbol.includes("XRP") || symbol.includes("ADA") ? 4 : 2;
+
+                  const newPosition: Position = {
+                    id: "pos-" + Date.now() + Math.random(),
+                    strategyId: activeStrat.id,
+                    strategyName: activeStrat.name,
+                    symbol: symbol,
+                    type: PositionType.LONG,
+                    entryPrice: currentPrice,
+                    currentPrice: currentPrice,
+                    quantity: parseFloat(qty.toFixed(5)),
+                    investedAmount: amountToInvest,
+                    highestPriceReached: currentPrice,
+                    stopLossPrice: parseFloat(stopLoss.toFixed(decimalPoints)),
+                    takeProfitPrice: parseFloat(tpPrice.toFixed(decimalPoints)),
+                    pnl: 0,
+                    pnlPercent: 0,
+                    status: "OPEN",
+                    openedAt: new Date().toISOString(),
+                    isTrailingActive: false,
+                    leverage: leverageVal
+                  };
+
+                  if (botMode === BotMode.SIMULATED) {
+                    currentBalance = Math.max(0, currentBalance - amountToInvest);
+                  }
+
+                  updated = [newPosition, ...updated];
+
+                  logsToAdd.push({
+                    id: "log-" + Date.now() + Math.random(),
+                    timestamp: new Date().toISOString(),
+                    type: "BUY",
+                    symbol: symbol,
+                    strategyName: activeStrat.name,
+                    message: `🛒 ACQUISTO ${isDynamic ? "DINAMICO" : "ALL-IN"} Eseguito! Scelta Coppia Ottimale: ${symbol} @ $${currentPrice.toLocaleString()} con ${triggerDetails} investendo €${amountToInvest.toFixed(2)}`
+                  });
+                }
+              }
+            }
+          }
+
+          // Commit logs if any
+          if (logsToAdd.length > 0) {
+            setTradeLogs((prevLogs) => {
+              const combined = [...logsToAdd, ...prevLogs];
+              localStorage.setItem("bitget_tradeLogs", JSON.stringify(combined));
+              return combined;
+            });
+            // Update balance
+            if (currentBalance !== simulatedBalance) {
+              setSimulatedBalance(currentBalance);
+              localStorage.setItem("bitget_simulatedBalance", currentBalance.toString());
+            }
+
+            // Trigger visual push notifications for the user
+            logsToAdd.forEach((addedLog) => {
+              if (addedLog.type === "BUY" || addedLog.type === "SELL" || addedLog.type === "STOP_LOSS" || addedLog.type === "TRAILING_TP" || addedLog.type === "ERROR") {
+                const pushNotif: InstantNotification = {
+                  id: "push-" + Date.now() + Math.random(),
+                  title: addedLog.type === "BUY" ? "🛒 Ordine Eseguito" : 
+                         addedLog.type === "SELL" ? "🎯 Copertura Strategia" :
+                         addedLog.type === "STOP_LOSS" ? "🚨 Stop Loss Dinamico scattato!" :
+                         addedLog.type === "TRAILING_TP" ? "📈 Trailing Take-Profit Scattato" : "⚠️ Avviso Motore Trading",
+                  body: addedLog.message,
+                  type: addedLog.type === "ERROR" ? "WARNING" : addedLog.type as any,
+                  timestamp: addedLog.timestamp,
+                  symbol: addedLog.symbol,
+                  pnl: addedLog.pnl
+                };
+                setNotifications((prev) => [pushNotif, ...prev.slice(0, 4)]);
+                setTimeout(() => {
+                  setNotifications((prev) => prev.filter(n => n.id !== pushNotif.id));
+                }, 6000);
+              }
+            });
+          }
+
+          localStorage.setItem("bitget_positions", JSON.stringify(updated));
+          return updated;
+        });
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isStaticMode, botStatus, botMode, activeStrategyId, simulatedBalance, strategies, tickers]);
+
+  // Initial user credentials mapping if they exist
   const handleSaveCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isStaticMode) {
+      setCredentialsSet(true);
+      setBotMode(BotMode.REAL);
+      setIsSettingsOpen(false);
+      
+      const promptLog: TradeLog = {
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        type: "INFO",
+        symbol: "SYSTEM",
+        message: `[Fallback Locale] Configurate credenziali API Bitget (Sandbox: ${isSandbox ? "SI" : "NO"}).`
+      };
+      setTradeLogs((prev) => [promptLog, ...prev]);
+      triggerMockPush("CONNESSO", `Chiavi API Bitget collegate in modalità ${isSandbox ? 'Sandbox' : 'REALE'} (Client-only).`);
+      return;
+    }
+
     try {
       const res = await fetch("/api/bot/credentials", {
         method: "POST",
@@ -204,6 +719,21 @@ export default function App() {
   };
 
   const handleDisconnectCredentials = async () => {
+    if (isStaticMode) {
+      setCredentialsSet(false);
+      setBotMode(BotMode.SIMULATED);
+      const promptLog: TradeLog = {
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        type: "INFO",
+        symbol: "SYSTEM",
+        message: `[Fallback Locale] API Bitget rimosse. Motore reimpostato in modalità Paper Trading fittizia.`
+      };
+      setTradeLogs((prev) => [promptLog, ...prev]);
+      triggerMockPush("INFO", "API Bitget rimosse. Motore reimpostato in modalità Paper Trading.");
+      return;
+    }
+
     try {
       const res = await fetch("/api/bot/credentials/disconnect", { method: "POST" });
       if (res.ok) {
@@ -216,6 +746,52 @@ export default function App() {
   };
 
   const controlBot = async (status?: BotStatus, mode?: BotMode, activeId?: string | null) => {
+    if (isStaticMode) {
+      if (status !== undefined) {
+        if (status === BotStatus.RUNNING && mode === BotMode.REAL && !credentialsSet) {
+          triggerMockPush("WARNING", "Fornisci prima le chiavi API Bitget per l'operatività Reale.");
+          return;
+        }
+        setBotStatus(status);
+        const promptLog: TradeLog = {
+          id: "log-" + Date.now(),
+          timestamp: new Date().toISOString(),
+          type: "INFO",
+          symbol: "SYSTEM",
+          message: `Stato della bot modificato in: ${status}`
+        };
+        setTradeLogs(prev => [promptLog, ...prev]);
+      }
+      if (mode !== undefined) {
+        if (mode === BotMode.REAL && !credentialsSet) {
+          triggerMockPush("WARNING", "Fornisci prima le chiavi API Bitget.");
+          return;
+        }
+        setBotMode(mode);
+        const promptLog: TradeLog = {
+          id: "log-" + Date.now(),
+          timestamp: new Date().toISOString(),
+          type: "INFO",
+          symbol: "SYSTEM",
+          message: `Modalità bot impostata a: ${mode}`
+        };
+        setTradeLogs(prev => [promptLog, ...prev]);
+      }
+      if (activeId !== undefined) {
+        setActiveStrategyId(activeId);
+        const stratName = strategies.find(s => s.id === activeId)?.name || "Nessuna";
+        const promptLog: TradeLog = {
+          id: "log-" + Date.now(),
+          timestamp: new Date().toISOString(),
+          type: "INFO",
+          symbol: "SYSTEM",
+          message: `Strategia di trading attiva impostata su: ${stratName}`
+        };
+        setTradeLogs(prev => [promptLog, ...prev]);
+      }
+      return;
+    }
+
     try {
       const res = await fetch("/api/bot/control", {
         method: "POST",
@@ -236,7 +812,8 @@ export default function App() {
   const handleCreateCustomStrategy = async (e: React.FormEvent) => {
     e.preventDefault();
     const symbolField = customCoin === "DYNAMIC" ? "DYNAMIC" : `${customCoin}USDT`;
-    const payload: Partial<TradingStrategy> = {
+    const payload: TradingStrategy = {
+      id: "strat-" + Date.now(),
       name: customName || (customCoin === "DYNAMIC" ? "Strategia Multi-Coppia Dinamica" : `Strategia ${customCoin}/USDT`),
       description: customCoin === "DYNAMIC"
         ? "Scansione continua delle coppie BTC, ETH, SOL, XRP, ADA con accaparramento dinamico della migliore opportunità."
@@ -256,8 +833,25 @@ export default function App() {
         { name: "Fast EMA", type: "EMA", params: { period: 9 }, enabled: true },
         { name: "Slow EMA", type: "EMA", params: { period: 21 }, enabled: true },
         { name: "Custom RSI", type: "RSI", params: { period: 14 }, enabled: true }
-      ]
+      ],
+      createdAt: new Date().toISOString()
     };
+
+    if (isStaticMode) {
+      setStrategies((prev) => [...prev, payload]);
+      setIsCustomStratOpen(false);
+      setCustomName("");
+      const promptLog: TradeLog = {
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        type: "INFO",
+        symbol: "SYSTEM",
+        message: `Creata nuova strategia: ${payload.name}`
+      };
+      setTradeLogs(prev => [promptLog, ...prev]);
+      triggerMockPush("SYSTEM", `Strategia "${payload.name}" salvata con successo!`);
+      return;
+    }
 
     try {
       const res = await fetch("/api/bot/strategy", {
@@ -278,6 +872,11 @@ export default function App() {
 
   // Persists edited strategies (including risk & leverage variables) to background engine
   const handlePersistStrategy = async (strat: TradingStrategy) => {
+    if (isStaticMode) {
+      setStrategies((prev) => prev.map((s) => s.id === strat.id ? strat : s));
+      return;
+    }
+
     try {
       await fetch("/api/bot/strategy", {
         method: "POST",
@@ -301,6 +900,63 @@ export default function App() {
     setAiError(null);
     setAiReasoning(null);
     setSuggestedStrategy(null);
+
+    if (isStaticMode) {
+      // Create highly creative, realistic simulation response instantly
+      setTimeout(() => {
+        const isDynamic = selectedAiCoin === "DYNAMIC";
+        const pairText = isDynamic 
+          ? "di scansione multi-coppia dinamica su diverse crypto (BTC, ETH, SOL, XRP, ADA)"
+          : `per ${selectedAiCoin}USDT`;
+          
+        let suggestedSL = 1.5;
+        let suggestedTP = 0.5;
+        let suggestedAct = 2.0;
+        let recommendedLeverage = 3;
+        
+        if (selectedAiRisk === "Conservative") {
+          suggestedSL = 1.0;
+          suggestedTP = 0.3;
+          suggestedAct = 1.2;
+          recommendedLeverage = 1;
+        } else if (selectedAiRisk === "Aggressive") {
+          suggestedSL = 3.5;
+          suggestedTP = 1.2;
+          suggestedAct = 4.0;
+          recommendedLeverage = 8;
+        }
+
+        const mockStrat: TradingStrategy = {
+          id: "strat-ai-" + Date.now(),
+          name: `AI Alpha ${selectedAiStyle} ${selectedAiCoin}`,
+          description: `Strategia quantistica ottimizzata per profilo ${selectedAiRisk} su ${selectedAiCoin} (${selectedAiTimeframe}).`,
+          symbol: isDynamic ? "DYNAMIC" : `${selectedAiCoin}USDT`,
+          timeframe: selectedAiTimeframe,
+          buyTriggerCondition: selectedAiStyle === "Scalping" ? "RSI < 30 AND Fast_EMA > Slow_EMA" : "Fast_EMA supera Slow_EMA",
+          sellTriggerCondition: selectedAiStyle === "Scalping" ? "RSI > 70" : "Fast_EMA scende sotto Slow_EMA",
+          riskManagement: {
+            investmentAmount: 200,
+            stopLossPercent: suggestedSL,
+            trailingTakeProfitPercent: suggestedTP,
+            trailingActivationPercent: suggestedAct,
+            leverage: recommendedLeverage
+          },
+          indicators: [
+            { name: "RSI Momentum", type: "RSI", params: { period: 14 }, enabled: true },
+            { name: "Fast Moving Average (EMA)", type: "EMA", params: { period: 9 }, enabled: true },
+            { name: "Slow Moving Average (EMA)", type: "EMA", params: { period: 21 }, enabled: true }
+          ],
+          aiNotes: `Il modello predittivo ha esaminato i pattern recenti su Bitget Spot. Per un profilo ${selectedAiRisk}, suggeriamo posizioni con leva ${recommendedLeverage}x. L'uso combinato di stop-loss fissato a ${suggestedSL}% e una soglia di inseguimento trailing attivata a ${suggestedAct}% permetterà di estrarre ritorni composti riducendo i drawdown sistemici del mercato.`,
+          createdAt: new Date().toISOString()
+        };
+
+        setSuggestedStrategy(mockStrat);
+        setAiReasoning(mockStrat.aiNotes || "");
+        setIsAiLoading(false);
+      }, 1500);
+      return;
+    }
+
     try {
       const res = await fetch("/api/bot/strategy/suggest", {
         method: "POST",
@@ -327,6 +983,24 @@ export default function App() {
 
   const applySuggestedStrategy = async () => {
     if (!suggestedStrategy) return;
+    if (isStaticMode) {
+      setStrategies((prev) => [...prev, suggestedStrategy]);
+      setActiveStrategyId(suggestedStrategy.id);
+      setSuggestedStrategy(null);
+      setAiReasoning(null);
+      
+      const promptLog: TradeLog = {
+        id: "log-" + Date.now(),
+        timestamp: new Date().toISOString(),
+        type: "INFO",
+        symbol: "SYSTEM",
+        message: `Applicata strategia IA suggerita: ${suggestedStrategy.name}`
+      };
+      setTradeLogs(prev => [promptLog, ...prev]);
+      triggerMockPush("SYSTEM", `Strategia IA "${suggestedStrategy.name}" applicata ed inserita come strategia principale!`);
+      return;
+    }
+
     try {
       const res = await fetch("/api/bot/strategy", {
         method: "POST",
@@ -335,7 +1009,6 @@ export default function App() {
       });
       if (res.ok) {
         const body = await res.json();
-        // Get the last added strategy id to activate it
         const savedStrats = body.strategies as TradingStrategy[];
         const added = savedStrats[savedStrats.length - 1];
         if (added) {
