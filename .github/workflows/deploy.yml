@@ -1,14 +1,27 @@
-name: CI/CD Pipeline
+name: Deploy to GitHub Pages
 
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+  # Consente di eseguire questo workflow manualmente dalla scheda Actions di GitHub
+  workflow_dispatch:
+
+# Permessi richiesti per il GITHUB_TOKEN per distribuire su GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Gestione della concorrenza per consentire solo una distribuzione alla volta
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
-  build-and-test:
-    name: Build & Verify Applet
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
 
     steps:
@@ -18,24 +31,33 @@ jobs:
       - name: Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-size: 'large'
           node-version: '20'
           cache: 'npm'
 
       - name: Install Dependencies
         run: npm install
 
-      - name: Run Type Checks and Linter
+      - name: Run Type Checks
         run: npm run lint
 
-      - name: Build Production Application
+      - name: Build Application
         run: npm run build
         env:
           NODE_ENV: production
 
-      - name: Archive Production Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Remove Server-side Artifacts
+        run: |
+          rm -f dist/server.cjs dist/server.cjs.map
+          echo "Rimossi i file del server Node.js CJS per mantenere leggero il deployment statico di GitHub Pages"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          name: bitget-ai-bot-production-build
-          path: dist/
-          retention-days: 5
+          path: './dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
