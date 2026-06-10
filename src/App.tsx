@@ -229,14 +229,16 @@ export default function App() {
   // Synchronize localStorage when local states change under Static Mode
   useEffect(() => {
     if (isStaticMode) {
-      localStorage.setItem("bitget_botStatus", botStatus);
-      localStorage.setItem("bitget_botMode", botMode);
-      if (activeStrategyId) localStorage.setItem("bitget_activeStrategyId", activeStrategyId);
+      localStorage.setItem("bitget_botStatus", JSON.stringify(botStatus));
+      localStorage.setItem("bitget_botMode", JSON.stringify(botMode));
+      if (activeStrategyId) {
+        localStorage.setItem("bitget_activeStrategyId", JSON.stringify(activeStrategyId));
+      }
       localStorage.setItem("bitget_strategies", JSON.stringify(strategies));
       localStorage.setItem("bitget_positions", JSON.stringify(positions));
       localStorage.setItem("bitget_tradeLogs", JSON.stringify(tradeLogs));
-      localStorage.setItem("bitget_credentialsSet", credentialsSet.toString());
-      localStorage.setItem("bitget_simulatedBalance", simulatedBalance.toString());
+      localStorage.setItem("bitget_credentialsSet", JSON.stringify(credentialsSet));
+      localStorage.setItem("bitget_simulatedBalance", JSON.stringify(simulatedBalance));
     }
   }, [isStaticMode, botStatus, botMode, activeStrategyId, strategies, positions, tradeLogs, credentialsSet, simulatedBalance]);
 
@@ -699,7 +701,7 @@ export default function App() {
             // Update balance
             if (currentBalance !== simulatedBalance) {
               setSimulatedBalance(currentBalance);
-              localStorage.setItem("bitget_simulatedBalance", currentBalance.toString());
+              localStorage.setItem("bitget_simulatedBalance", JSON.stringify(currentBalance));
             }
 
             // Trigger visual push notifications for the user
