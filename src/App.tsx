@@ -240,9 +240,68 @@ export default function App() {
     }
   }, [isStaticMode, botStatus, botMode, activeStrategyId, strategies, positions, tradeLogs, credentialsSet, simulatedBalance]);
 
+  // Reference tracker for Binance fetch throttling in static mode
+  const lastBinanceFetchRef = useRef<number>(0);
+
+  // Fetch real market tickers from Binance when running in client-only Static Mode
+  const fetchBinanceTickers = async () => {
+    try {
+      const response = await fetch(
+        "https://api.binance.com/api/v3/ticker/24hr?symbols=%5B%22BTCUSDT%22%2C%22ETHUSDT%22%2C%22SOLUSDT%22%2C%22XRPUSDT%22%2C%22ADAUSDT%22%5D"
+      );
+      if (response.ok) {
+        const binanceTickers = await response.json();
+        const mapped: Record<string, MarketTicker> = {};
+        binanceTickers.forEach((item: any) => {
+          mapped[item.symbol] = {
+            symbol: item.symbol,
+            lastPr: parseFloat(item.lastPrice).toString(),
+            bidPr: parseFloat(item.bidPrice).toString(),
+            askPr: parseFloat(item.askPrice).toString(),
+            high24h: parseFloat(item.highPrice).toString(),
+            low24h: parseFloat(item.lowPrice).toString(),
+            open24h: parseFloat(item.openPrice).toString(),
+            change24h: parseFloat(item.priceChangePercent).toFixed(2),
+          };
+        });
+        
+        // Update tickers state
+        setTickers((prev) => {
+          const updated = { ...prev, ...mapped };
+          localStorage.setItem("bitget_tickers", JSON.stringify(updated));
+          return updated;
+        });
+
+        // Sync local indicator tracking matching prices
+        Object.keys(mapped).forEach((sym) => {
+          const p = parseFloat(mapped[sym].lastPr);
+          if (!indicatorTrackingRef.current[sym]) {
+            indicatorTrackingRef.current[sym] = {
+              rsi: 40 + Math.random() * 20,
+              emaShort: p,
+              emaLong: p
+            };
+          } else {
+            const ind = indicatorTrackingRef.current[sym];
+            ind.emaShort = ind.emaShort * 0.4 + p * 0.6;
+            ind.emaLong = ind.emaLong * 0.6 + p * 0.4;
+          }
+        });
+      }
+    } catch (e) {
+      console.warn("Qualcosa è andato storto nel caricamento dei ticker reali di Binance:", e);
+    }
+  };
+
   // Fetch the full backend state (with local-only detection & fallback)
   const fetchState = async () => {
     if (isStaticMode) {
+      const now = Date.now();
+      // Fetch every 4 seconds in static mode to get fresh actual market data
+      if (now - lastBinanceFetchRef.current >= 4000) {
+        lastBinanceFetchRef.current = now;
+        await fetchBinanceTickers();
+      }
       return;
     }
     try {
