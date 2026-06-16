@@ -21,7 +21,7 @@ export enum PositionType {
 
 export interface TechnicalIndicator {
   name: string;
-  type: "RSI" | "MACD" | "EMA" | "SMA" | "BB";
+  type: "RSI" | "MACD" | "EMA" | "SMA" | "BB" | "DV";
   params: Record<string, number>;
   enabled: boolean;
 }
