@@ -210,6 +210,16 @@ export default function App() {
   const [customInvestment, setCustomInvestment] = useState<number>(100);
   const [customLeverage, setCustomLeverage] = useState<number>(1);
 
+  // Backtest Management Variables
+  const [isBacktestOpen, setIsBacktestOpen] = useState<boolean>(false);
+  const [backtestStrategy, setBacktestStrategy] = useState<TradingStrategy | null>(null);
+  const [backtestPeriod, setBacktestPeriod] = useState<number>(30); // 1, 7, 30, 90 days
+  const [backtestRegime, setBacktestRegime] = useState<string>("bull"); // "bull", "bear", "sideways", "volatile"
+  const [backtestStartingBalance, setBacktestStartingBalance] = useState<number>(1000);
+  const [backtestCoin, setBacktestCoin] = useState<string>("BTC"); // BTC, ETH, SOL, XRP, ADA
+  const [isBacktesting, setIsBacktesting] = useState<boolean>(false);
+  const [backtestResult, setBacktestResult] = useState<any>(null);
+
   // Local push notifications logs & container
   const [notifications, setNotifications] = useState<InstantNotification[]>([]);
   
@@ -1091,6 +1101,357 @@ export default function App() {
     }, 5500);
   };
 
+  // Technical indicators calculators for backtesting
+  const calcEMA = (prices: number[], period: number): number[] => {
+    const k = 2 / (period + 1);
+    const ema: number[] = [];
+    if (prices.length === 0) return [];
+    ema.push(prices[0]);
+    for (let i = 1; i < prices.length; i++) {
+      ema.push(prices[i] * k + ema[i - 1] * (1 - k));
+    }
+    return ema;
+  };
+
+  const calcRSI = (prices: number[], period: number = 14): number[] => {
+    const rsi: number[] = [];
+    if (prices.length <= period) {
+      return prices.map(() => 50);
+    }
+    
+    let gains = 0;
+    let losses = 0;
+    
+    for (let i = 1; i <= period; i++) {
+      const diff = prices[i] - prices[i - 1];
+      if (diff > 0) gains += diff;
+      else losses -= diff;
+    }
+    
+    let avgGain = gains / period;
+    let avgLoss = losses / period;
+    
+    for (let idx = 0; idx < prices.length; idx++) {
+      if (idx < period) {
+        rsi.push(50);
+        continue;
+      }
+      if (idx > period) {
+        const diff = prices[idx] - prices[idx - 1];
+        const gain = diff > 0 ? diff : 0;
+        const loss = diff < 0 ? -diff : 0;
+        avgGain = (avgGain * (period - 1) + gain) / period;
+        avgLoss = (avgLoss * (period - 1) + loss) / period;
+      }
+      
+      if (avgLoss === 0) {
+        rsi.push(100);
+      } else {
+        const rs = avgGain / avgLoss;
+        rsi.push(100 - 100 / (1 + rs));
+      }
+    }
+    return rsi;
+  };
+
+  // Backtest triggers and simulation handler
+  const handleOpenBacktest = (strat: TradingStrategy) => {
+    setBacktestStrategy(strat);
+    setBacktestCoin(strat.symbol === "DYNAMIC" ? "BTC" : strat.symbol.replace("USDT", ""));
+    setBacktestResult(null);
+    setIsBacktestOpen(true);
+  };
+
+  const handleRunBacktest = () => {
+    if (!backtestStrategy) return;
+    setIsBacktesting(true);
+
+    setTimeout(() => {
+      const coin = backtestCoin;
+      const basePrices: Record<string, number> = {
+        BTC: 68000,
+        ETH: 3500,
+        SOL: 152.0,
+        XRP: 0.62,
+        ADA: 0.44
+      };
+      const basePrice = basePrices[coin] || 100;
+      
+      const numSteps = 80;
+      const prices: number[] = [];
+      const times: string[] = [];
+      
+      let trendFactor = 0;
+      let sinePeriod = 1.0;
+      let waveNoise = 0.02;
+      
+      switch (backtestRegime) {
+        case "bull":
+          trendFactor = 0.0035; 
+          sinePeriod = 0.5;
+          waveNoise = 0.015;
+          break;
+        case "bear":
+          trendFactor = -0.003; 
+          sinePeriod = 0.4;
+          waveNoise = 0.02;
+          break;
+        case "sideways":
+          trendFactor = -0.0001; 
+          sinePeriod = 1.5;
+          waveNoise = 0.012;
+          break;
+        case "volatile":
+          trendFactor = 0.0005; 
+          sinePeriod = 3.0; 
+          waveNoise = 0.055;
+          break;
+      }
+
+      for (let t = 0; t < numSteps; t++) {
+        const progress = t / numSteps;
+        const sineWave = Math.sin(progress * Math.PI * 4 * sinePeriod) * (backtestRegime === "volatile" ? 0.12 : 0.045);
+        const randNoise = (Math.random() - 0.5) * waveNoise;
+        const multi = 1 + (t * trendFactor) + sineWave + randNoise;
+        const decimalPoints = coin === "XRP" || coin === "ADA" ? 4 : 2;
+        prices.push(parseFloat((basePrice * multi).toFixed(decimalPoints)));
+        
+        const date = new Date(Date.now() - (backtestPeriod * 86400000) + (progress * backtestPeriod * 86400000));
+        times.push(date.toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }));
+      }
+
+      const emaShortPeriod = backtestStrategy.indicators.find(i => i.type === "EMA" && i.params.period < 15)?.params.period || 10;
+      const emaLongPeriod = backtestStrategy.indicators.find(i => i.type === "EMA" && i.params.period >= 15)?.params.period || 30;
+      const rsiPeriod = backtestStrategy.indicators.find(i => i.type === "RSI")?.params.period || 14;
+
+      const fastEma = calcEMA(prices, emaShortPeriod);
+      const slowEma = calcEMA(prices, emaLongPeriod);
+      const rsi = calcRSI(prices, rsiPeriod);
+
+      let rsiBuyThreshold = 38;
+      let rsiSellThreshold = 65;
+      
+      const buyCond = backtestStrategy.buyTriggerCondition;
+      const sellCond = backtestStrategy.sellTriggerCondition;
+
+      if (buyCond.includes("<")) {
+        const match = buyCond.match(/RSI\s*<\s*(\d+)/i);
+        if (match) rsiBuyThreshold = parseInt(match[1]);
+      }
+      if (sellCond.includes(">")) {
+        const match = sellCond.match(/RSI\s*>\s*(\d+)/i);
+        if (match) rsiSellThreshold = parseInt(match[1]);
+      }
+
+      let walletBalance = backtestStartingBalance;
+      let simPosition: {
+        entryPrice: number;
+        highestPrice: number;
+        stopPrice: number;
+        entryIndex: number;
+        isActive: boolean;
+        isTrailing: boolean;
+        allocated: number;
+        entryTime: string;
+      } | null = null;
+
+      const simulatedTrades: any[] = [];
+      const balanceCurve: { time: string; balance: number; price: number }[] = [];
+      
+      const slPercent = backtestStrategy.riskManagement.stopLossPercent;
+      const trailActivePercent = backtestStrategy.riskManagement.trailingActivationPercent;
+      const trailTpPercent = backtestStrategy.riskManagement.trailingTakeProfitPercent;
+      const leverage = backtestStrategy.riskManagement.leverage || 1;
+      const allocatedPerTrade = Math.min(walletBalance, backtestStrategy.riskManagement.investmentAmount || 100);
+
+      for (let t = 0; t < numSteps; t++) {
+        const curPrice = prices[t];
+        const curRsi = rsi[t];
+        const curFast = fastEma[t];
+        const curSlow = slowEma[t];
+        const timeStr = times[t];
+
+        if (!simPosition) {
+          let shouldBuy = false;
+          if (buyCond.includes("RSI") && buyCond.includes("EMA")) {
+            if (curRsi < rsiBuyThreshold && curFast > curSlow) {
+              shouldBuy = true;
+            }
+          } else if (buyCond.includes("RSI")) {
+            if (curRsi < rsiBuyThreshold) {
+              shouldBuy = true;
+            }
+          } else if (buyCond.includes("EMA") || buyCond.includes("supera")) {
+            if (t > 0 && fastEma[t] > slowEma[t] && fastEma[t-1] <= slowEma[t-1]) {
+              shouldBuy = true;
+            }
+          } else {
+            if (curRsi < 40) shouldBuy = true;
+          }
+
+          if (shouldBuy && walletBalance >= allocatedPerTrade) {
+            simPosition = {
+              entryPrice: curPrice,
+              highestPrice: curPrice,
+              stopPrice: parseFloat((curPrice * (1 - slPercent / 100)).toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2)),
+              entryIndex: t,
+              isActive: true,
+              isTrailing: false,
+              allocated: allocatedPerTrade,
+              entryTime: timeStr
+            };
+            walletBalance -= allocatedPerTrade;
+          }
+        } else {
+          const deltaPct = ((curPrice - simPosition.entryPrice) / simPosition.entryPrice) * 100;
+          const currentPnLPct = deltaPct * leverage;
+          const currentPnLAmount = (simPosition.allocated * currentPnLPct) / 100;
+
+          if (currentPnLPct <= -100) {
+            simulatedTrades.push({
+              id: `bt-trade-${t}`,
+              symbol: `${coin}USDT`,
+              entryPrice: simPosition.entryPrice,
+              exitPrice: curPrice,
+              entryTime: simPosition.entryTime,
+              exitTime: timeStr,
+              pnlPercent: -100,
+              pnlAmount: -simPosition.allocated,
+              closedReason: "💥 LIQUIDAZIONE (Leva)"
+            });
+            simPosition = null;
+          }
+          else if (curPrice <= simPosition.stopPrice) {
+            simulatedTrades.push({
+              id: `bt-trade-${t}`,
+              symbol: `${coin}USDT`,
+              entryPrice: simPosition.entryPrice,
+              exitPrice: curPrice,
+              entryTime: simPosition.entryTime,
+              exitTime: timeStr,
+              pnlPercent: currentPnLPct,
+              pnlAmount: currentPnLAmount,
+              closedReason: "🚨 STOP LOSS"
+            });
+            walletBalance += (simPosition.allocated + currentPnLAmount);
+            simPosition = null;
+          }
+          else {
+            if (curPrice > simPosition.highestPrice) {
+              simPosition.highestPrice = curPrice;
+              if (deltaPct > 1.5) {
+                const newStopPrice = simPosition.entryPrice * (1 + (deltaPct * 0.4) / 100);
+                if (newStopPrice > simPosition.stopPrice) {
+                  simPosition.stopPrice = parseFloat(newStopPrice.toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2));
+                }
+              }
+            }
+
+            const activationLevel = simPosition.entryPrice * (1 + trailActivePercent / 100);
+            if (!simPosition.isTrailing && curPrice >= activationLevel) {
+              simPosition.isTrailing = true;
+            }
+
+            let shouldExit = false;
+            let exitReason = "";
+
+            if (simPosition.isTrailing) {
+              const dropThreshold = simPosition.highestPrice * (1 - trailTpPercent / 100);
+              if (curPrice <= dropThreshold) {
+                shouldExit = true;
+                exitReason = "📈 TRAILING TP";
+              }
+            }
+
+            if (!shouldExit) {
+              if (sellCond.includes("RSI") && curRsi > rsiSellThreshold) {
+                shouldExit = true;
+                exitReason = "🎯 CORE SIGNAL (RSI)";
+              } else if ((sellCond.includes("EMA") || sellCond.includes("scende sotto")) && curFast < curSlow && fastEma[t-1] >= slowEma[t-1]) {
+                shouldExit = true;
+                exitReason = "🎯 CORE SIGNAL (EMA)";
+              }
+            }
+
+            if (shouldExit) {
+              simulatedTrades.push({
+                id: `bt-trade-${t}`,
+                symbol: `${coin}USDT`,
+                entryPrice: simPosition.entryPrice,
+                exitPrice: curPrice,
+                entryTime: simPosition.entryTime,
+                exitTime: timeStr,
+                pnlPercent: currentPnLPct,
+                pnlAmount: currentPnLAmount,
+                closedReason: exitReason
+              });
+              walletBalance += (simPosition.allocated + currentPnLAmount);
+              simPosition = null;
+            }
+          }
+        }
+
+        const activePnL = simPosition 
+          ? (simPosition.allocated * (((curPrice - simPosition.entryPrice) / simPosition.entryPrice) * 100 * leverage)) / 100 
+          : 0;
+        
+        balanceCurve.push({
+          time: timeStr,
+          price: curPrice,
+          balance: parseFloat((walletBalance + (simPosition ? simPosition.allocated : 0) + activePnL).toFixed(2))
+        });
+      }
+
+      if (simPosition) {
+        const finalPrice = prices[numSteps - 1];
+        const pPct = ((finalPrice - simPosition.entryPrice) / simPosition.entryPrice) * 100 * leverage;
+        const pAmt = (simPosition.allocated * pPct) / 100;
+        simulatedTrades.push({
+          id: `bt-trade-final`,
+          symbol: `${coin}USDT`,
+          entryPrice: simPosition.entryPrice,
+          exitPrice: finalPrice,
+          entryTime: simPosition.entryTime,
+          exitTime: times[numSteps - 1],
+          pnlPercent: pPct,
+          pnlAmount: pAmt,
+          closedReason: "⏳ FINE PERIODO"
+        });
+        walletBalance += (simPosition.allocated + pAmt);
+      }
+
+      const finalBal = walletBalance;
+      const profitPercent = ((finalBal - backtestStartingBalance) / backtestStartingBalance) * 100;
+      const totalTrades = simulatedTrades.length;
+      const winCount = simulatedTrades.filter(t => t.pnlPercent > 0).length;
+      const lossCount = totalTrades - winCount;
+      const winRate = totalTrades > 0 ? (winCount / totalTrades) * 100 : 0;
+
+      let peak = backtestStartingBalance;
+      let maxDD = 0;
+      balanceCurve.forEach(pt => {
+        if (pt.balance > peak) peak = pt.balance;
+        const dd = ((peak - pt.balance) / peak) * 100;
+        if (dd > maxDD) maxDD = dd;
+      });
+
+      setBacktestResult({
+        trades: simulatedTrades.reverse(),
+        finalBalance: finalBal,
+        initialBalance: backtestStartingBalance,
+        totalTrades,
+        winCount,
+        lossCount,
+        winRate,
+        maxDrawdown: maxDD,
+        profitPercent,
+        curve: balanceCurve,
+        coin
+      });
+      setIsBacktesting(false);
+    }, 1200);
+  };
+
   // Open position analytics helper
   const openPositions = positions.filter((p) => p.status === "OPEN");
   const closedPositions = positions.filter((p) => p.status === "CLOSED");
@@ -1925,6 +2286,24 @@ export default function App() {
                             <span className="text-cyan-400 font-bold">{strat.riskManagement.leverage || 1}x</span>
                           </div>
                         </div>
+
+                        {/* Backtest & Action triggers */}
+                        <div className="pt-2 border-t border-slate-900/60 flex gap-2">
+                          {!isActive && (
+                            <button
+                              onClick={() => handleActivateStrategy(strat.id)}
+                              className="flex-1 py-1.5 px-3 bg-slate-800 hover:bg-slate-755 text-slate-200 border border-slate-700 font-bold rounded-xl text-[10px] transition-all text-center focus:outline-none"
+                            >
+                              ATTIVA
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleOpenBacktest(strat)}
+                            className="flex-1 py-1.5 px-3 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 font-bold rounded-xl text-[10px] transition-all text-center focus:outline-none flex items-center justify-center gap-1"
+                          >
+                            <Activity className="h-3.5 w-3.5" /> ESEGUI BACKTEST
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -2325,6 +2704,271 @@ export default function App() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ALGORITHMIC BACKTESTING MODAL */}
+      <AnimatePresence>
+        {isBacktestOpen && backtestStrategy && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-2xl w-full relative space-y-4 max-h-[90vh] overflow-y-auto"
+            >
+              <button 
+                onClick={() => setIsBacktestOpen(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-slate-100 focus:outline-none"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="flex items-center gap-2 text-white">
+                <Activity className="h-5 w-5 text-cyan-400" />
+                <div>
+                  <h3 className="font-bold tracking-tight text-md">Laboratorio di Backtesting Algoritmico</h3>
+                  <p className="text-[10px] text-slate-400">Strategia: <span className="text-cyan-400 font-bold">{backtestStrategy.name}</span></p>
+                </div>
+              </div>
+
+              {/* Configurations Form Panel */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-950/50 p-4 rounded-2xl border border-slate-800/60">
+                <div>
+                  <label className="text-[9px] text-slate-400 font-bold block mb-1">Coppia Spot</label>
+                  <select
+                    disabled={backtestStrategy.symbol !== "DYNAMIC"}
+                    value={backtestCoin}
+                    onChange={(e) => {
+                      setBacktestCoin(e.target.value);
+                      setBacktestResult(null);
+                    }}
+                    className="w-full bg-slate-950 text-white rounded-xl p-2.5 text-xs border border-slate-800 outline-none focus:border-cyan-500 disabled:opacity-50"
+                  >
+                    <option value="BTC">BTC / USDT</option>
+                    <option value="ETH">ETH / USDT</option>
+                    <option value="SOL">SOL / USDT</option>
+                    <option value="XRP">XRP / USDT</option>
+                    <option value="ADA">ADA / USDT</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[9px] text-slate-400 font-bold block mb-1">Periodo Storico</label>
+                  <select
+                    value={backtestPeriod}
+                    onChange={(e) => {
+                      setBacktestPeriod(parseInt(e.target.value));
+                      setBacktestResult(null);
+                    }}
+                    className="w-full bg-slate-950 text-white rounded-xl p-2.5 text-xs border border-slate-800 outline-none focus:border-cyan-500"
+                  >
+                    <option value="1">1 Giorno</option>
+                    <option value="7">7 Giorni</option>
+                    <option value="30">30 Giorni</option>
+                    <option value="90">90 Giorni</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[9px] text-slate-400 font-bold block mb-1">Trend Mercato</label>
+                  <select
+                    value={backtestRegime}
+                    onChange={(e) => {
+                      setBacktestRegime(e.target.value);
+                      setBacktestResult(null);
+                    }}
+                    className="w-full bg-slate-950 text-white rounded-xl p-2.5 text-xs border border-slate-800 outline-none focus:border-cyan-500"
+                  >
+                    <option value="bull">Rialzista 📈</option>
+                    <option value="bear">Ribassista 📉</option>
+                    <option value="sideways">Laterale ↔️</option>
+                    <option value="volatile">Super Volatile ⚡</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[9px] text-slate-400 font-bold block mb-1">Capitale ($)</label>
+                  <input
+                    type="number"
+                    value={backtestStartingBalance}
+                    onChange={(e) => {
+                      setBacktestStartingBalance(parseFloat(e.target.value) || 100);
+                      setBacktestResult(null);
+                    }}
+                    className="w-full bg-slate-950 text-white rounded-xl p-2.5 text-xs border border-slate-800 outline-none focus:border-cyan-500"
+                  />
+                </div>
+              </div>
+
+              {/* Run Trigger */}
+              <div className="flex justify-center">
+                <button
+                  onClick={handleRunBacktest}
+                  disabled={isBacktesting}
+                  className="px-6 py-2.5 bg-cyan-500 hover:bg-cyan-400 disabled:bg-slate-850 text-slate-950 font-extrabold text-xs rounded-xl transition-all shadow-lg shadow-cyan-500/10 focus:outline-none flex items-center justify-center gap-2"
+                >
+                  {isBacktesting ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      SIMULAZIONE IN CORSO...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4" />
+                      ESEGUI BACKTEST
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Show report if exists */}
+              {backtestResult && (
+                <div className="space-y-4 pt-2 border-t border-slate-800/80">
+                  {/* Performance Statistics Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+                    <div className="bg-slate-950/20 border border-slate-850 rounded-2xl p-2.5">
+                      <span className="text-[9px] text-slate-400 block font-bold mb-1">Capitale Finale</span>
+                      <span className="text-xs font-bold text-slate-100 font-mono">${backtestResult.finalBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+
+                    <div className="bg-slate-950/20 border border-slate-850 rounded-2xl p-2.5">
+                      <span className="text-[9px] text-slate-400 block font-bold mb-1">P&L Totale (%)</span>
+                      <span className={`text-xs font-bold font-mono ${backtestResult.profitPercent >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                        {backtestResult.profitPercent >= 0 ? "+" : ""}{backtestResult.profitPercent.toFixed(2)}%
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-950/20 border border-slate-850 rounded-2xl p-2.5">
+                      <span className="text-[9px] text-slate-400 block font-bold mb-1">Operazioni Chiuse</span>
+                      <span className="text-xs font-bold text-slate-100 font-mono">{backtestResult.totalTrades}</span>
+                    </div>
+
+                    <div className="bg-slate-950/20 border border-slate-850 rounded-2xl p-2.5">
+                      <span className="text-[9px] text-slate-400 block font-bold mb-1">Win Rate %</span>
+                      <span className="text-xs font-bold text-emerald-400 font-mono">{backtestResult.winRate.toFixed(1)}%</span>
+                    </div>
+
+                    <div className="bg-slate-950/20 border border-slate-850 rounded-2xl p-2.5 col-span-2 sm:col-span-1">
+                      <span className="text-[9px] text-slate-400 block font-bold mb-1">Max Drawdown</span>
+                      <span className="text-xs font-bold text-rose-400 font-mono">-{backtestResult.maxDrawdown.toFixed(2)}%</span>
+                    </div>
+                  </div>
+
+                  {/* SVG Equity Sparkline Graph */}
+                  <div className="bg-slate-950/40 border border-slate-800 rounded-2xl p-4">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Curva di Equità Saldo (USDT)</span>
+                      <span className="text-[9px] text-slate-400 font-mono">Valore Iniziale: ${backtestStartingBalance.toLocaleString()}</span>
+                    </div>
+                    {(() => {
+                      const balances = backtestResult.curve.map((pt: any) => pt.balance);
+                      const minBal = Math.min(...balances, backtestStartingBalance) * 0.99;
+                      const maxBal = Math.max(...balances, backtestStartingBalance) * 1.01;
+                      const balRange = maxBal - minBal || 1;
+                      
+                      const pointsString = backtestResult.curve.map((pt: any, i: number) => {
+                        const x = (i / (backtestResult.curve.length - 1)) * 580;
+                        const y = 90 - ((pt.balance - minBal) / balRange) * 80;
+                        return `${x},${y}`;
+                      }).join(" ");
+
+                      return (
+                        <div className="relative">
+                          <svg viewBox="0 0 580 100" className="w-full h-24 overflow-visible">
+                            <defs>
+                              <linearGradient id="backtestGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor={backtestResult.profitPercent >= 0 ? "#10b981" : "#ef4444"} stopOpacity="0.25"/>
+                                <stop offset="100%" stopColor={backtestResult.profitPercent >= 0 ? "#10b981" : "#ef4444"} stopOpacity="0"/>
+                              </linearGradient>
+                            </defs>
+                            <line x1="0" y1="100" x2="580" y2="100" stroke="#1e293b" strokeWidth="1" />
+                            <line x1="0" y1="50" x2="580" y2="50" stroke="#1e293b" strokeDasharray="3" strokeWidth="1" />
+                            <line x1="0" y1="10" x2="580" y2="10" stroke="#1e293b" strokeWidth="1" />
+                            
+                            <polygon
+                              points={`0,100 ${pointsString} 580,100`}
+                              fill="url(#backtestGrad)"
+                            />
+                            
+                            <polyline
+                              fill="none"
+                              stroke={backtestResult.profitPercent >= 0 ? "#10b981" : "#ef4444"}
+                              strokeWidth="2.5"
+                              points={pointsString}
+                            />
+                          </svg>
+                          <div className="flex justify-between text-[8px] text-slate-500 font-mono mt-1 pt-1 border-t border-slate-900">
+                            <span>$ {minBal.toFixed(1)}</span>
+                            <span>Linea Mediana v2.0</span>
+                            <span>$ {maxBal.toFixed(1)}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Trades ledger list */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] text-indigo-400 font-bold block uppercase tracking-wider font-mono font-bold">Libro Registro Operazioni Simulate ({backtestResult.trades.length})</span>
+                    <div className="max-h-40 overflow-y-auto border border-slate-800 rounded-2xl bg-slate-950/60 scrollbar-thin">
+                      {backtestResult.trades.length === 0 ? (
+                        <div className="p-8 text-center text-slate-500 text-xs font-mono">
+                          Nessuna operazione di trading innescata. Prova a cambiare trend o coppia spot.
+                        </div>
+                      ) : (
+                        <table className="w-full text-[11px] text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-950 text-slate-400 border-b border-slate-800 text-[10px] font-mono">
+                              <th className="p-2.5 font-bold">Data/Step</th>
+                              <th className="p-2.5 font-bold">Direzione</th>
+                              <th className="p-2.5 font-bold">Prezzi (In / Out)</th>
+                              <th className="p-2.5 font-bold">Causa Chiusura</th>
+                              <th className="p-2.5 font-bold text-right">Ritorni / PnL</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-900">
+                            {backtestResult.trades.map((tr: any) => (
+                              <tr key={tr.id} className="hover:bg-slate-900/30 font-mono">
+                                <td className="p-2.5 text-slate-400 whitespace-nowrap">{tr.exitTime}</td>
+                                <td className="p-2.5 text-slate-200">
+                                  <span className="bg-cyan-500/10 text-cyan-400 px-1.5 py-0.5 rounded font-bold border border-cyan-500/20 text-[10px]">LONG {backtestStrategy.riskManagement.leverage}x</span>
+                                </td>
+                                <td className="p-2.5 text-slate-300">
+                                  ${tr.entryPrice.toLocaleString(undefined, { minimumFractionDigits: tr.entryPrice < 10 ? 4 : 2 })} → ${tr.exitPrice.toLocaleString(undefined, { minimumFractionDigits: tr.exitPrice < 10 ? 4 : 2 })}
+                                </td>
+                                <td className="p-2.5">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    tr.closedReason.includes("STOP") ? "bg-rose-500/10 text-rose-400 border border-rose-500/10" :
+                                    tr.closedReason.includes("TRAILING") ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/10" :
+                                    "bg-blue-500/10 text-blue-400 border border-blue-500/10"
+                                  }`}>{tr.closedReason}</span>
+                                </td>
+                                <td className={`p-2.5 text-right font-bold ${tr.pnlPercent >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                  {tr.pnlPercent >= 0 ? "+" : ""}{tr.pnlPercent.toFixed(2)}% (${tr.pnlAmount.toFixed(2)})
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Bottom Buttons */}
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBacktestOpen(false)}
+                  className="px-5 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl text-xs font-bold focus:outline-none"
+                >
+                  Chiudi Laboratorio
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
