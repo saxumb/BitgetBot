@@ -2047,7 +2047,7 @@ export default function App() {
                         <div className="flex-1">
                           <div className="flex justify-between items-baseline text-[9px] text-slate-400">
                             <span className="font-bold text-slate-200">{log.symbol}</span>
-                            <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
+                            <span>{new Date(log.timestamp).toLocaleDateString()} {new Date(log.timestamp).toLocaleTimeString()}</span>
                           </div>
                           <p className="text-slate-300 font-mono mt-0.5">{log.message}</p>
                         </div>
