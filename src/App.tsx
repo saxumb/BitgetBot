@@ -27,17 +27,8 @@ import {
   Flame,
   Zap,
   DollarSign,
-  ArrowRight,
-  TrendingUpIcon
+  ArrowRight
 } from "lucide-react";
-import { 
-  ResponsiveContainer, 
-  AreaChart, 
-  Area, 
-  XAxis, 
-  YAxis, 
-  Tooltip 
-} from "recharts";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   BotStatus, 
@@ -1109,29 +1100,6 @@ export default function App() {
   const totalOpenInvested = openPositions.reduce((acc, pos) => acc + pos.investedAmount, 0);
   const totalClosedPnl = closedPositions.reduce((acc, pos) => acc + (pos.pnl || 0), 0);
   
-  // Realtime Price chart generator based on current active coin last price
-  const generateChartData = (symbol: string) => {
-    const tick = tickers[symbol];
-    if (!tick) return [];
-    const baseP = parseFloat(tick.lastPr) || 96000;
-    const items = [];
-    const seed = parseFloat(tick.change24h) > 0 ? 1 : -1;
-    for (let i = 24; i >= 0; i--) {
-      const minutesAgo = i * 10;
-      const progress = (24 - i) / 24;
-      const variation = Math.sin(progress * Math.PI * 2.5) * (baseP * 0.008) + (progress * seed * baseP * 0.012);
-      items.push({
-        time: `${minutesAgo}m fa`,
-        prezzo: parseFloat((baseP - (baseP * 0.015) + variation).toFixed(symbol.includes("XRP") ? 4 : 2))
-      });
-    }
-    // Set exact last item as actual lastPr
-    items[items.length - 1].prezzo = baseP;
-    return items;
-  };
-
-  const chartData = generateChartData(activeTickerSymbol);
-
   // Active Strategy Settings Helper
   const currentActiveStrategy = strategies.find(s => s.id === activeStrategyId);
 
@@ -1720,13 +1688,12 @@ export default function App() {
               
               {/* Real-time Ticker price history area chart */}
               <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4">
-                <div className="flex justify-between items-baseline">
+                <div className="flex justify-between items-center">
                   <div>
                     <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                      <TrendingUpIcon className="h-4 w-4 text-cyan-400" />
-                      Visualizzazione Grafica Quotazione {activeTickerSymbol}
+                      Quotazione Attiva: {activeTickerSymbol}
                     </h3>
-                    <p className="text-xs text-slate-400">Andamento spot aggiornato in tempo reale con indicatore di trend algoritmico</p>
+                    <p className="text-xs text-slate-400">Andamento spot aggiornato in tempo reale</p>
                   </div>
 
                   <div className="text-right">
@@ -1735,30 +1702,6 @@ export default function App() {
                       {tickers[activeTickerSymbol] && parseFloat(tickers[activeTickerSymbol].change24h) >= 0 ? "+" : ""}{tickers[activeTickerSymbol]?.change24h}%
                     </span>
                   </div>
-                </div>
-
-                {/* Recharts Graphical plotting container */}
-                <div className="h-56">
-                  {chartData.length > 0 && (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={chartData} margin={{ top: 10, right: 5, left: -20, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="colorPrezzo" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#06b6d4" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <XAxis dataKey="time" stroke="#475569" fontSize={10} tickLine={false} />
-                        <YAxis stroke="#475569" fontSize={10} domain={["auto", "auto"]} tickLine={false} />
-                        <Tooltip 
-                          contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155" }}
-                          labelStyle={{ color: "#94a3b8" }}
-                          itemStyle={{ color: "#06b6d4", fontSize: "12px" }}
-                        />
-                        <Area type="monotone" dataKey="prezzo" stroke="#06b6d4" strokeWidth={2} fillOpacity={1} fill="url(#colorPrezzo)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  )}
                 </div>
               </div>
 
