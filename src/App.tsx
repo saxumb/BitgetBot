@@ -214,10 +214,11 @@ export default function App() {
   const [isBacktestOpen, setIsBacktestOpen] = useState<boolean>(false);
   const [backtestStrategy, setBacktestStrategy] = useState<TradingStrategy | null>(null);
   const [backtestPeriod, setBacktestPeriod] = useState<number>(30); // 1, 7, 30, 90 days
-  const [backtestRegime, setBacktestRegime] = useState<string>("bull"); // "bull", "bear", "sideways", "volatile"
+  const [backtestRegime, setBacktestRegime] = useState<string>("real"); // "real", "bull", "bear", "sideways", "volatile"
   const [backtestStartingBalance, setBacktestStartingBalance] = useState<number>(1000);
   const [backtestCoin, setBacktestCoin] = useState<string>("BTC"); // BTC, ETH, SOL, XRP, ADA
   const [isBacktesting, setIsBacktesting] = useState<boolean>(false);
+  const [backtestWarning, setBacktestWarning] = useState<string | null>(null);
   const [backtestResult, setBacktestResult] = useState<any>(null);
 
   // Local push notifications logs & container
@@ -1162,62 +1163,125 @@ export default function App() {
     setIsBacktestOpen(true);
   };
 
-  const handleRunBacktest = () => {
+  const handleRunBacktest = async () => {
     if (!backtestStrategy) return;
     setIsBacktesting(true);
+    setBacktestWarning(null);
 
-    setTimeout(() => {
+    try {
       const coin = backtestCoin;
-      const basePrices: Record<string, number> = {
-        BTC: 68000,
-        ETH: 3500,
-        SOL: 152.0,
-        XRP: 0.62,
-        ADA: 0.44
-      };
-      const basePrice = basePrices[coin] || 100;
-      
-      const numSteps = 80;
-      const prices: number[] = [];
-      const times: string[] = [];
-      
-      let trendFactor = 0;
-      let sinePeriod = 1.0;
-      let waveNoise = 0.02;
-      
-      switch (backtestRegime) {
-        case "bull":
-          trendFactor = 0.0035; 
-          sinePeriod = 0.5;
-          waveNoise = 0.015;
-          break;
-        case "bear":
-          trendFactor = -0.003; 
-          sinePeriod = 0.4;
-          waveNoise = 0.02;
-          break;
-        case "sideways":
-          trendFactor = -0.0001; 
-          sinePeriod = 1.5;
-          waveNoise = 0.012;
-          break;
-        case "volatile":
-          trendFactor = 0.0005; 
-          sinePeriod = 3.0; 
-          waveNoise = 0.055;
-          break;
+      let prices: number[] = [];
+      let highs: number[] = [];
+      let lows: number[] = [];
+      let times: string[] = [];
+      let didUseRealData = false;
+
+      if (backtestRegime === "real") {
+        try {
+          const symbol = `${coin}USDT`;
+          let interval = "4h";
+          let limit = 180;
+          if (backtestPeriod === 1) {
+            interval = "15m";
+            limit = 96;
+          } else if (backtestPeriod === 7) {
+            interval = "1h";
+            limit = 168;
+          } else if (backtestPeriod === 30) {
+            interval = "4h";
+            limit = 180;
+          } else if (backtestPeriod === 90) {
+            interval = "12h";
+            limit = 180;
+          }
+
+          const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+          if (!res.ok) {
+            throw new Error(`Binance API response error: ${res.statusText}`);
+          }
+          const klines = await res.json();
+          if (Array.isArray(klines) && klines.length > 0) {
+            klines.forEach((k: any) => {
+              times.push(new Date(k[0]).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }));
+              prices.push(parseFloat(k[4])); // close price
+              highs.push(parseFloat(k[2]));  // high price
+              lows.push(parseFloat(k[3]));   // low price
+            });
+            didUseRealData = true;
+          } else {
+            throw new Error("Formato klines non valido");
+          }
+        } catch (err: any) {
+          console.warn("Errore caricamento dati reali, procedo con fallback simulato:", err);
+          setBacktestWarning("Impossibile connettersi alle API Binance. Usato motore di simulazione come fallback.");
+        }
       }
 
-      for (let t = 0; t < numSteps; t++) {
-        const progress = t / numSteps;
-        const sineWave = Math.sin(progress * Math.PI * 4 * sinePeriod) * (backtestRegime === "volatile" ? 0.12 : 0.045);
-        const randNoise = (Math.random() - 0.5) * waveNoise;
-        const multi = 1 + (t * trendFactor) + sineWave + randNoise;
-        const decimalPoints = coin === "XRP" || coin === "ADA" ? 4 : 2;
-        prices.push(parseFloat((basePrice * multi).toFixed(decimalPoints)));
+      if (!didUseRealData) {
+        // Fallback or explicit synthetic calculation
+        const basePrices: Record<string, number> = {
+          BTC: 68000,
+          ETH: 3500,
+          SOL: 152.0,
+          XRP: 0.62,
+          ADA: 0.44
+        };
+        const basePrice = basePrices[coin] || 100;
+        const numSteps = 80;
         
-        const date = new Date(Date.now() - (backtestPeriod * 86400000) + (progress * backtestPeriod * 86400000));
-        times.push(date.toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }));
+        let trendFactor = 0;
+        let sinePeriod = 1.0;
+        let waveNoise = 0.02;
+        
+        switch (backtestRegime) {
+          case "bull":
+            trendFactor = 0.0035; 
+            sinePeriod = 0.5;
+            waveNoise = 0.015;
+            break;
+          case "bear":
+            trendFactor = -0.003; 
+            sinePeriod = 0.4;
+            waveNoise = 0.02;
+            break;
+          case "sideways":
+            trendFactor = -0.0001; 
+            sinePeriod = 1.5;
+            waveNoise = 0.012;
+            break;
+          case "volatile":
+            trendFactor = 0.0005; 
+            sinePeriod = 3.0; 
+            waveNoise = 0.055;
+            break;
+          default:
+            // if "real" failed, fallback is moderate bull-sideways
+            trendFactor = 0.0008;
+            sinePeriod = 1.0;
+            waveNoise = 0.022;
+            break;
+        }
+
+        for (let t = 0; t < numSteps; t++) {
+          const progress = t / numSteps;
+          const sineWave = Math.sin(progress * Math.PI * 4 * sinePeriod) * (backtestRegime === "volatile" ? 0.12 : 0.045);
+          const randNoise = (Math.random() - 0.5) * waveNoise;
+          const multi = 1 + (t * trendFactor) + sineWave + randNoise;
+          const decimalPoints = coin === "XRP" || coin === "ADA" ? 4 : 2;
+          const curPrice = parseFloat((basePrice * multi).toFixed(decimalPoints));
+          prices.push(curPrice);
+          highs.push(parseFloat((curPrice * 1.015).toFixed(decimalPoints)));
+          lows.push(parseFloat((curPrice * 0.985).toFixed(decimalPoints)));
+          
+          const date = new Date(Date.now() - (backtestPeriod * 86400000) + (progress * backtestPeriod * 86400000));
+          times.push(date.toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }));
+        }
+      }
+
+      const numSteps = prices.length;
+      if (numSteps === 0) {
+        setIsBacktesting(false);
+        return;
       }
 
       const emaShortPeriod = backtestStrategy.indicators.find(i => i.type === "EMA" && i.params.period < 15)?.params.period || 10;
@@ -1266,6 +1330,8 @@ export default function App() {
 
       for (let t = 0; t < numSteps; t++) {
         const curPrice = prices[t];
+        const curHigh = highs[t];
+        const curLow = lows[t];
         const curRsi = rsi[t];
         const curFast = fastEma[t];
         const curSlow = slowEma[t];
@@ -1303,16 +1369,19 @@ export default function App() {
             walletBalance -= allocatedPerTrade;
           }
         } else {
-          const deltaPct = ((curPrice - simPosition.entryPrice) / simPosition.entryPrice) * 100;
-          const currentPnLPct = deltaPct * leverage;
+          // Check stop loss and liquidation over the candle's low price
+          const worstPnlPct = (((curLow - simPosition.entryPrice) / simPosition.entryPrice) * 100) * leverage;
+          const currentPnLPct = (((curPrice - simPosition.entryPrice) / simPosition.entryPrice) * 100) * leverage;
           const currentPnLAmount = (simPosition.allocated * currentPnLPct) / 100;
 
-          if (currentPnLPct <= -100) {
+          if (worstPnlPct <= -100) {
+            // Liquidation triggered
+            const liqPrice = simPosition.entryPrice * (1 - 100 / (leverage || 1) / 100);
             simulatedTrades.push({
               id: `bt-trade-${t}`,
               symbol: `${coin}USDT`,
               entryPrice: simPosition.entryPrice,
-              exitPrice: curPrice,
+              exitPrice: parseFloat(liqPrice.toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2)),
               entryTime: simPosition.entryTime,
               exitTime: timeStr,
               pnlPercent: -100,
@@ -1321,24 +1390,28 @@ export default function App() {
             });
             simPosition = null;
           }
-          else if (curPrice <= simPosition.stopPrice) {
+          else if (curLow <= simPosition.stopPrice) {
+            const stopLossPnlPct = (((simPosition.stopPrice - simPosition.entryPrice) / simPosition.entryPrice) * 100) * leverage;
+            const stopLossPnlAmt = (simPosition.allocated * stopLossPnlPct) / 100;
             simulatedTrades.push({
               id: `bt-trade-${t}`,
               symbol: `${coin}USDT`,
               entryPrice: simPosition.entryPrice,
-              exitPrice: curPrice,
+              exitPrice: simPosition.stopPrice,
               entryTime: simPosition.entryTime,
               exitTime: timeStr,
-              pnlPercent: currentPnLPct,
-              pnlAmount: currentPnLAmount,
+              pnlPercent: stopLossPnlPct,
+              pnlAmount: stopLossPnlAmt,
               closedReason: "🚨 STOP LOSS"
             });
-            walletBalance += (simPosition.allocated + currentPnLAmount);
+            walletBalance += (simPosition.allocated + stopLossPnlAmt);
             simPosition = null;
           }
           else {
-            if (curPrice > simPosition.highestPrice) {
-              simPosition.highestPrice = curPrice;
+            if (curHigh > simPosition.highestPrice) {
+              simPosition.highestPrice = curHigh;
+              // Trailing stop loss update
+              const deltaPct = ((curHigh - simPosition.entryPrice) / simPosition.entryPrice) * 100;
               if (deltaPct > 1.5) {
                 const newStopPrice = simPosition.entryPrice * (1 + (deltaPct * 0.4) / 100);
                 if (newStopPrice > simPosition.stopPrice) {
@@ -1348,18 +1421,21 @@ export default function App() {
             }
 
             const activationLevel = simPosition.entryPrice * (1 + trailActivePercent / 100);
-            if (!simPosition.isTrailing && curPrice >= activationLevel) {
+            if (!simPosition.isTrailing && curHigh >= activationLevel) {
               simPosition.isTrailing = true;
             }
 
             let shouldExit = false;
             let exitReason = "";
+            let exitPrice = curPrice;
 
             if (simPosition.isTrailing) {
               const dropThreshold = simPosition.highestPrice * (1 - trailTpPercent / 100);
-              if (curPrice <= dropThreshold) {
+              // if candle low falls below trailing threshold
+              if (curLow <= dropThreshold) {
                 shouldExit = true;
                 exitReason = "📈 TRAILING TP";
+                exitPrice = parseFloat(dropThreshold.toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2));
               }
             }
 
@@ -1367,25 +1443,30 @@ export default function App() {
               if (sellCond.includes("RSI") && curRsi > rsiSellThreshold) {
                 shouldExit = true;
                 exitReason = "🎯 CORE SIGNAL (RSI)";
+                exitPrice = curPrice;
               } else if ((sellCond.includes("EMA") || sellCond.includes("scende sotto")) && curFast < curSlow && fastEma[t-1] >= slowEma[t-1]) {
                 shouldExit = true;
                 exitReason = "🎯 CORE SIGNAL (EMA)";
+                exitPrice = curPrice;
               }
             }
 
             if (shouldExit) {
+              const tradeExitPnlPct = (((exitPrice - simPosition.entryPrice) / simPosition.entryPrice) * 100) * leverage;
+              const tradeExitPnlAmt = (simPosition.allocated * tradeExitPnlPct) / 100;
+              
               simulatedTrades.push({
                 id: `bt-trade-${t}`,
                 symbol: `${coin}USDT`,
                 entryPrice: simPosition.entryPrice,
-                exitPrice: curPrice,
+                exitPrice: exitPrice,
                 entryTime: simPosition.entryTime,
                 exitTime: timeStr,
-                pnlPercent: currentPnLPct,
-                pnlAmount: currentPnLAmount,
+                pnlPercent: tradeExitPnlPct,
+                pnlAmount: tradeExitPnlAmt,
                 closedReason: exitReason
               });
-              walletBalance += (simPosition.allocated + currentPnLAmount);
+              walletBalance += (simPosition.allocated + tradeExitPnlAmt);
               simPosition = null;
             }
           }
@@ -1448,8 +1529,11 @@ export default function App() {
         curve: balanceCurve,
         coin
       });
+    } catch (error) {
+      console.error("Backtest fallito:", error);
+    } finally {
       setIsBacktesting(false);
-    }, 1200);
+    }
   };
 
   // Open position analytics helper
@@ -2773,19 +2857,20 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="text-[9px] text-slate-400 font-bold block mb-1">Trend Mercato</label>
+                  <label className="text-[9px] text-slate-400 font-bold block mb-1">Fonte Dati / Trend</label>
                   <select
                     value={backtestRegime}
                     onChange={(e) => {
                       setBacktestRegime(e.target.value);
                       setBacktestResult(null);
                     }}
-                    className="w-full bg-slate-950 text-white rounded-xl p-2.5 text-xs border border-slate-800 outline-none focus:border-cyan-500"
+                    className="w-full bg-slate-950 text-white rounded-xl p-2.5 text-xs border border-slate-800 outline-none focus:border-cyan-500 font-bold"
                   >
-                    <option value="bull">Rialzista 📈</option>
-                    <option value="bear">Ribassista 📉</option>
-                    <option value="sideways">Laterale ↔️</option>
-                    <option value="volatile">Super Volatile ⚡</option>
+                    <option value="real">Real Binance API 🌐</option>
+                    <option value="bull">Sim. Rialzista 📈</option>
+                    <option value="bear">Sim. Ribassista 📉</option>
+                    <option value="sideways">Sim. Laterale ↔️</option>
+                    <option value="volatile">Sim. Volatile ⚡</option>
                   </select>
                 </div>
 
@@ -2827,6 +2912,13 @@ export default function App() {
               {/* Show report if exists */}
               {backtestResult && (
                 <div className="space-y-4 pt-2 border-t border-slate-800/80">
+                  {backtestWarning && (
+                    <div className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-3 flex gap-2 items-center text-amber-400 text-xs">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      <span>{backtestWarning}</span>
+                    </div>
+                  )}
+
                   {/* Performance Statistics Grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
                     <div className="bg-slate-950/20 border border-slate-850 rounded-2xl p-2.5">
