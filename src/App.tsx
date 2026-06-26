@@ -63,8 +63,8 @@ const DEFAULT_TICKERS: Record<string, MarketTicker> = {
 const DEFAULT_STRATEGIES: TradingStrategy[] = [
   {
     id: "strat-dynamic-multi",
-    name: "Scanner Multi-Coppia Dinamico (Predefinito)",
-    description: "Algoritmo quantistico adattivo che scansiona continuamente BTC, ETH, SOL, XRP e ADA sul mercato per catturare all-in l'asset con migliore configurazione tecnica.",
+    name: "Scanner Multi-Coppia Dinamico Futures (10x)",
+    description: "Algoritmo quantistico adattivo futures che scansiona continuamente BTC, ETH, SOL, XRP e ADA sul mercato per catturare all-in l'asset con migliore configurazione tecnica con leva fino a 10x.",
     symbol: "DYNAMIC",
     timeframe: "5m",
     indicators: [
@@ -79,15 +79,15 @@ const DEFAULT_STRATEGIES: TradingStrategy[] = [
       stopLossPercent: 2.0,
       trailingTakeProfitPercent: 0.8,
       trailingActivationPercent: 2.5,
-      leverage: 1
+      leverage: 10
     },
-    aiNotes: "Questo algoritmo scansiona a intervalli regolari l'intero paniere di mercato di Bitget. Non appena una delle coppie incrocia in ipervenduto oppure mostra un'ottima forza relativa, apre un'azione di trading Spot allocando il budget. Risolve il problema del gating vincolato su singole coppie.",
+    aiNotes: "Questo algoritmo scansiona l'intero paniere futures di Bitget. Non appena una delle coppie incrocia in ipervenduto oppure mostra un'ottima forza relativa, apre un'azione di trading Futures allocando il budget a leva 10x. Risolve il problema del gating vincolato su singole coppie.",
     createdAt: new Date(Date.now() - 86400000 * 1).toISOString()
   },
   {
     id: "strat-ai-scalper",
-    name: "AI Multi-Indicator Scalper (Suggerito)",
-    description: "Algoritmo ad alta frequenza che combina RSI ipervenduto/ipercomprato con l'indicatore EMA per catturare piccoli trend rapidi.",
+    name: "AI Multi-Indicator Futures Scalper (10x)",
+    description: "Algoritmo futures ad alta frequenza che combina RSI ipervenduto/ipercomprato con l'indicatore EMA per catturare piccoli trend rapidi con leva 10x.",
     symbol: "BTCUSDT",
     timeframe: "5m",
     indicators: [
@@ -102,15 +102,15 @@ const DEFAULT_STRATEGIES: TradingStrategy[] = [
       stopLossPercent: 1.5,
       trailingTakeProfitPercent: 0.5,
       trailingActivationPercent: 2.0,
-      leverage: 1
+      leverage: 10
     },
-    aiNotes: "L'intelligenza artificiale raccomanda questa strategia su orizzonti temporali brevi per capitalizzare sulla volatilità intraday del Bitcoin. Lo stop loss stretto protegge da dump rapidi.",
+    aiNotes: "L'intelligenza artificiale raccomanda questa strategia su orizzonti temporali brevi per capitalizzare sulla volatilità intraday del Bitcoin con leva a 10x. Lo stop loss stretto protegge da dump rapidi.",
     createdAt: new Date(Date.now() - 86400000 * 3).toISOString()
   },
   {
     id: "strat-eth-trend",
-    name: "EMA Crossover Momentum Tracker",
-    description: "Insegue i trend macro su Ethereum utilizzando tagli di medie mobili veloci e lente per confermare forza di mercato.",
+    name: "EMA Crossover Futures Tracker (10x)",
+    description: "Insegue i trend macro futures su Ethereum utilizzando incroci di medie mobili veloci e lente per confermare forza di mercato con leva 10x.",
     symbol: "ETHUSDT",
     timeframe: "15m",
     indicators: [
@@ -124,15 +124,15 @@ const DEFAULT_STRATEGIES: TradingStrategy[] = [
       stopLossPercent: 2.5,
       trailingTakeProfitPercent: 1.0,
       trailingActivationPercent: 4.5,
-      leverage: 1
+      leverage: 10
     },
-    aiNotes: "Ottimizzato per contesti direzionali chiari. Evitare l'attivazione in fasi puramente laterali per ridurre falsi segnali di trading.",
+    aiNotes: "Ottimizzato per contesti direzionali futures chiari. Evitare l'attivazione in fasi puramente laterali per ridurre falsi segnali di trading.",
     createdAt: new Date(Date.now() - 86400000 * 5).toISOString()
   },
   {
     id: "strat-dv-absorption-sol",
-    name: "Delta Volume Absorption (LONG)",
-    description: "Cavalca l'assorbimento rialzista dei pesi massimi. Quando i trader short aggressively aggrediscono il mercato (DV negativo) ma le balene assorbono gli ordini impedendo la discesa del prezzo, apre un LONG a leva 3x su coppie volatili.",
+    name: "Delta Volume Absorption Futures (LONG 10x)",
+    description: "Cavalca l'assorbimento rialzista dei pesi massimi sui futures. Quando i trader short aggressively aggrediscono il mercato (DV negativo) ma le balene assorbono gli ordini, apre un LONG a leva 10x su SOL.",
     symbol: "SOLUSDT",
     timeframe: "15m",
     indicators: [
@@ -147,15 +147,15 @@ const DEFAULT_STRATEGIES: TradingStrategy[] = [
       stopLossPercent: 2.0,
       trailingTakeProfitPercent: 0.8,
       trailingActivationPercent: 2.5,
-      leverage: 3
+      leverage: 10
     },
-    aiNotes: "Ideata appositamente su SOLUSDT e coppie volatili. Rileva anomalie di divergence volumetrica dove il Delta Volume è fortemente ribassista ma il prezzo rifiuta di scendere (forte assorbimento bid), indicando inversioni di tendenza imminenti.",
+    aiNotes: "Ideata appositamente su SOLUSDT futures. Rileva anomalie di divergence volumetrica dove il Delta Volume è fortemente ribassista ma il prezzo rifiuta di scendere (forte assorbimento bid), indicando inversioni di tendenza imminenti con leva 10x.",
     createdAt: new Date().toISOString()
   },
   {
     id: "strat-dv-distribution-xrp",
-    name: "Delta Volume Distribution (SHORT)",
-    description: "Cavalca la distribuzione e la resistenza passiva. Quando i trader long aggressively aggrediscono l’ask (DV positivo) ma grandi seller assorbono l'ascesa bloccando il prezzo, apre uno SHORT a leva 3x su coppie volatili.",
+    name: "Delta Volume Distribution Futures (SHORT 10x)",
+    description: "Cavalca la distribuzione futures. Quando i trader long aggressively aggrediscono l’ask (DV positivo) ma grandi seller assorbono l'ascesa, apre uno SHORT a leva 10x su XRP.",
     symbol: "XRPUSDT",
     timeframe: "15m",
     indicators: [
@@ -170,15 +170,15 @@ const DEFAULT_STRATEGIES: TradingStrategy[] = [
       stopLossPercent: 2.5,
       trailingTakeProfitPercent: 0.8,
       trailingActivationPercent: 2.5,
-      leverage: 3
+      leverage: 10
     },
-    aiNotes: "Applicata su XRPUSDT ed asset oscillatori e volatili. Trova la massima deviazione dove un Delta Volume positivo non si traduce in un rialzo proporzionale del prezzo, anticipando un esausto ritracciamento.",
+    aiNotes: "Applicata su XRPUSDT futures per ritracciamenti. Trova la massima deviazione dove un Delta Volume positivo non si traduce in un rialzo proporzionale del prezzo, anticipando un esausto ritracciamento.",
     createdAt: new Date().toISOString()
   },
   {
     id: "strat-dv-multicoin-bidirectional",
-    name: "Delta Volume Multi-Coppia & Bi-Direzionale",
-    description: "Campiona e scansiona continuativamente tutte le coppie abilitate (BTC, ETH, SOL, XRP, ADA) alla ricerca di anomalie volumetriche. Apre posizioni LONG (in assorbimento bid con DV negativo) o SHORT (in distribuzione ask con DV positivo) con leva minima 3x per sfruttare la massima volatilità.",
+    name: "Delta Volume Futures Bi-Direzionale (10x)",
+    description: "Campiona e scansiona continuativamente tutte le coppie abilitate (BTC, ETH, SOL, XRP, ADA) alla ricerca di anomalie volumetriche futures. Apre posizioni LONG (con DV negativo) o SHORT (con DV positivo) con leva 10x.",
     symbol: "DYNAMIC",
     timeframe: "15m",
     indicators: [
@@ -193,9 +193,9 @@ const DEFAULT_STRATEGIES: TradingStrategy[] = [
       stopLossPercent: 2.0,
       trailingTakeProfitPercent: 0.8,
       trailingActivationPercent: 2.5,
-      leverage: 3
+      leverage: 10
     },
-    aiNotes: "Strategia ammiraglia multi-coppia e bi-direzionale. Lavora simultaneamente sulla totalità degli asset scansionati dal bot. Cerca specificamente forti anomalie volumetriche dove l'aggressività degli ordini market (Delta Volume) diverge nettamente dall'azione dei prezzi, indicando imminenti inversioni sia al rialzo che al ribasso.",
+    aiNotes: "Strategia ammiraglia futures bi-direzionale con leva 10x. Sfrutta forti anomalie volumetriche sia al rialzo che al ribasso.",
     createdAt: new Date().toISOString()
   }
 ];
@@ -241,9 +241,26 @@ export default function App() {
   const [activeStrategyId, setActiveStrategyId] = useState<string | null>(() => getLocalVar("bitget_activeStrategyId", "strat-dynamic-multi"));
   const [strategies, setStrategies] = useState<TradingStrategy[]>(() => {
     const loaded = getLocalVar("bitget_strategies", DEFAULT_STRATEGIES);
-    const hasNewDV = loaded.some(s => s.id === "strat-dv-multicoin-bidirectional");
+    // Auto-update any default strategy in local storage to match the new 10x leverage and names
+    const upgraded = loaded.map((loadedStrat) => {
+      const defaultStrat = DEFAULT_STRATEGIES.find((ds) => ds.id === loadedStrat.id);
+      if (defaultStrat) {
+        return {
+          ...loadedStrat,
+          name: defaultStrat.name,
+          description: defaultStrat.description,
+          riskManagement: {
+            ...loadedStrat.riskManagement,
+            leverage: defaultStrat.riskManagement.leverage
+          }
+        };
+      }
+      return loadedStrat;
+    });
+
+    const hasNewDV = upgraded.some(s => s.id === "strat-dv-multicoin-bidirectional");
     if (!hasNewDV) {
-      const updatedList = [...loaded];
+      const updatedList = [...upgraded];
       const dvStrategies = DEFAULT_STRATEGIES.filter(s => s.id.startsWith("strat-dv-"));
       dvStrategies.forEach(ds => {
         if (!updatedList.some(s => s.id === ds.id)) {
@@ -252,7 +269,7 @@ export default function App() {
       });
       return updatedList;
     }
-    return loaded;
+    return upgraded;
   });
   const [positions, setPositions] = useState<Position[]>(() => getLocalVar("bitget_positions", []));
   const [tradeLogs, setTradeLogs] = useState<TradeLog[]>(() => getLocalVar("bitget_tradeLogs", DEFAULT_LOGS));
@@ -625,33 +642,7 @@ export default function App() {
             }
 
             // Exit triggers
-            // 1) Stop Loss
-            const isStopTriggered = isShort
-              ? (currentPrice >= nextPos.stopLossPrice)
-              : (currentPrice <= nextPos.stopLossPrice);
-
-            if (isStopTriggered) {
-              nextPos.status = "CLOSED";
-              nextPos.closedAt = new Date().toISOString();
-              nextPos.closeReason = "DYNAMIC_STOP_LOSS";
-              
-              logsToAdd.push({
-                id: "log-" + Date.now() + Math.random(),
-                timestamp: new Date().toISOString(),
-                type: "STOP_LOSS",
-                symbol: nextPos.symbol,
-                strategyName: nextPos.strategyName,
-                pnl: nextPos.pnl,
-                message: `🚨 Stop Loss dinamico attivato! Posizione ${isShort ? "SHORT" : "LONG"} chiusa su ${nextPos.symbol} a $${currentPrice.toLocaleString()} (PnL: ${nextPos.pnlPercent.toFixed(2)}%, profitto: $${nextPos.pnl.toFixed(2)})`
-              });
-
-              if (botMode === BotMode.SIMULATED) {
-                currentBalance += (nextPos.investedAmount + nextPos.pnl);
-              }
-              return nextPos;
-            }
-
-            // 2) Trailing TP
+            // 1) Trailing TP (Checked first to preserve profit-taking priority if active)
             if (nextPos.isTrailingActive) {
               const dropThreshold = isShort
                 ? nextPos.highestPriceReached * (1 + risk.trailingTakeProfitPercent / 100)
@@ -681,6 +672,32 @@ export default function App() {
                 }
                 return nextPos;
               }
+            }
+
+            // 2) Stop Loss
+            const isStopTriggered = isShort
+              ? (currentPrice >= nextPos.stopLossPrice)
+              : (currentPrice <= nextPos.stopLossPrice);
+
+            if (isStopTriggered) {
+              nextPos.status = "CLOSED";
+              nextPos.closedAt = new Date().toISOString();
+              nextPos.closeReason = "DYNAMIC_STOP_LOSS";
+              
+              logsToAdd.push({
+                id: "log-" + Date.now() + Math.random(),
+                timestamp: new Date().toISOString(),
+                type: "STOP_LOSS",
+                symbol: nextPos.symbol,
+                strategyName: nextPos.strategyName,
+                pnl: nextPos.pnl,
+                message: `🚨 Stop Loss dinamico attivato! Posizione ${isShort ? "SHORT" : "LONG"} chiusa su ${nextPos.symbol} a $${currentPrice.toLocaleString()} (PnL: ${nextPos.pnlPercent.toFixed(2)}%, profitto: $${nextPos.pnl.toFixed(2)})`
+              });
+
+              if (botMode === BotMode.SIMULATED) {
+                currentBalance += (nextPos.investedAmount + nextPos.pnl);
+              }
+              return nextPos;
             }
 
             // 3) Sell Signal
@@ -805,21 +822,47 @@ export default function App() {
                   }
                 } else if (activeStrat.buyTriggerCondition.toUpperCase().includes("RSI")) {
                   let threshold = 35;
-                  const rsiMatch = activeStrat.buyTriggerCondition.match(/RSI\s*<\s*(\d+)/i);
+                  const isRsiShort = activeStrat.buyTriggerCondition.includes(">") || activeStrat.buyTriggerCondition.toUpperCase().includes("SHORT") || activeStrat.name.toUpperCase().includes("SHORT");
+                  
+                  const rsiMatch = activeStrat.buyTriggerCondition.match(/RSI\s*(<|>)\s*(\d+)/i) || activeStrat.buyTriggerCondition.match(/RSI\s*<\s*(\d+)/i);
                   if (rsiMatch) {
-                    threshold = parseInt(rsiMatch[1]);
+                    threshold = parseInt(rsiMatch[2] || rsiMatch[1]);
                   }
-                  if (ind.rsi < threshold) {
-                    metBuy = true;
-                    triggerDetails = `RSI ipervenduto (${ind.rsi.toFixed(1)} < ${threshold})`;
-                    score = threshold - ind.rsi;
+                  
+                  if (isRsiShort) {
+                    if (ind.rsi > threshold) {
+                      metBuy = true;
+                      isShort = true;
+                      triggerDetails = `RSI ipercomprato (${ind.rsi.toFixed(1)} > ${threshold})`;
+                      score = ind.rsi - threshold;
+                    }
+                  } else {
+                    if (ind.rsi < threshold) {
+                      metBuy = true;
+                      isShort = false;
+                      triggerDetails = `RSI ipervenduto (${ind.rsi.toFixed(1)} < ${threshold})`;
+                      score = threshold - ind.rsi;
+                    }
                   }
                 } else {
-                  if (ind.emaShort > ind.emaLong) {
-                    metBuy = true;
-                    const crossoverPct = ((ind.emaShort - ind.emaLong) / ind.emaLong) * 100;
-                    triggerDetails = `Incrocio Medie Mobili (EMA ${ind.emaShort.toFixed(1)} > ${ind.emaLong.toFixed(1)})`;
-                    score = crossoverPct;
+                  const isEmaShort = activeStrat.buyTriggerCondition.includes("scende sotto") || activeStrat.buyTriggerCondition.includes("<") || activeStrat.buyTriggerCondition.toUpperCase().includes("SHORT") || activeStrat.name.toUpperCase().includes("SHORT");
+                  
+                  if (isEmaShort) {
+                    if (ind.emaShort < ind.emaLong) {
+                      metBuy = true;
+                      isShort = true;
+                      const crossoverPct = ((ind.emaLong - ind.emaShort) / ind.emaLong) * 100;
+                      triggerDetails = `Incrocio Medie Mobili Ribassista (EMA ${ind.emaShort.toFixed(1)} < ${ind.emaLong.toFixed(1)})`;
+                      score = crossoverPct;
+                    }
+                  } else {
+                    if (ind.emaShort > ind.emaLong) {
+                      metBuy = true;
+                      isShort = false;
+                      const crossoverPct = ((ind.emaShort - ind.emaLong) / ind.emaLong) * 100;
+                      triggerDetails = `Incrocio Medie Mobili (EMA ${ind.emaShort.toFixed(1)} > ${ind.emaLong.toFixed(1)})`;
+                      score = crossoverPct;
+                    }
                   }
                 }
 
@@ -1611,19 +1654,49 @@ export default function App() {
               }
             }
           } else if (buyCond.includes("RSI") && buyCond.includes("EMA")) {
-            if (curRsi < rsiBuyThreshold && curFast > curSlow) {
-              shouldBuy = true;
+            const isRsiShort = buyCond.includes(">") || buyCond.toUpperCase().includes("SHORT") || backtestStrategy.name.toUpperCase().includes("SHORT");
+            if (isRsiShort) {
+              if (curRsi > rsiBuyThreshold && curFast < curSlow) {
+                shouldBuy = true;
+                isShort = true;
+              }
+            } else {
+              if (curRsi < rsiBuyThreshold && curFast > curSlow) {
+                shouldBuy = true;
+                isShort = false;
+              }
             }
           } else if (buyCond.includes("RSI")) {
-            if (curRsi < rsiBuyThreshold) {
-              shouldBuy = true;
+            const isRsiShort = buyCond.includes(">") || buyCond.toUpperCase().includes("SHORT") || backtestStrategy.name.toUpperCase().includes("SHORT");
+            if (isRsiShort) {
+              if (curRsi > rsiBuyThreshold) {
+                shouldBuy = true;
+                isShort = true;
+              }
+            } else {
+              if (curRsi < rsiBuyThreshold) {
+                shouldBuy = true;
+                isShort = false;
+              }
             }
-          } else if (buyCond.includes("EMA") || buyCond.includes("supera")) {
-            if (t > 0 && fastEma[t] > slowEma[t] && fastEma[t - 1] <= slowEma[t - 1]) {
-              shouldBuy = true;
+          } else if (buyCond.includes("EMA") || buyCond.includes("supera") || buyCond.includes("scende sotto")) {
+            const isEmaShort = buyCond.includes("scende sotto") || buyCond.includes("<") || buyCond.toUpperCase().includes("SHORT") || backtestStrategy.name.toUpperCase().includes("SHORT");
+            if (isEmaShort) {
+              if (t > 0 && fastEma[t] < slowEma[t] && fastEma[t - 1] >= slowEma[t - 1]) {
+                shouldBuy = true;
+                isShort = true;
+              }
+            } else {
+              if (t > 0 && fastEma[t] > slowEma[t] && fastEma[t - 1] <= slowEma[t - 1]) {
+                shouldBuy = true;
+                isShort = false;
+              }
             }
           } else {
-            if (curRsi < 40) shouldBuy = true;
+            if (curRsi < 40) {
+              shouldBuy = true;
+              isShort = false;
+            }
           }
 
           if (shouldBuy && walletBalance >= allocatedPerTrade) {
@@ -1675,143 +1748,132 @@ export default function App() {
               exitTime: timeStr,
               pnlPercent: -100,
               pnlAmount: -simPosition.allocated,
-              closedReason: `💥 LIQUIDAZIONE (${isShort ? "SHORT" : "LONG"})`
+              closedReason: `💥 LIQUIDAZIONE (${isShort ? "SHORT" : "LONG"})`,
+              type: simPosition.type,
+              leverage: leverage
             });
             simPosition = null;
           }
           else {
-            // Check stop loss
-            const stopTriggered = isShort 
-              ? (curHigh >= simPosition.stopPrice) 
-              : (curLow <= simPosition.stopPrice);
+            // Update trailing peak / extreme first
+            const isNewPeak = isShort 
+              ? (curLow < simPosition.highestPrice) // for short, highestPrice tracks lowest price seen
+              : (curHigh > simPosition.highestPrice);
 
-            if (stopTriggered) {
-              const exitPriceEvaluated = simPosition.stopPrice;
-              const stopLossPnlPct = isShort
-                ? (((simPosition.entryPrice - exitPriceEvaluated) / simPosition.entryPrice) * 100) * leverage
-                : (((exitPriceEvaluated - simPosition.entryPrice) / simPosition.entryPrice) * 100) * leverage;
-              const stopLossPnlAmt = (simPosition.allocated * stopLossPnlPct) / 100;
+            if (isNewPeak) {
+              simPosition.highestPrice = isShort ? curLow : curHigh;
+              // Trailing stop loss update
+              const deltaPct = isShort
+                ? ((simPosition.entryPrice - curLow) / simPosition.entryPrice) * 100
+                : ((curHigh - simPosition.entryPrice) / simPosition.entryPrice) * 100;
 
+              if (deltaPct > 1.5) {
+                // as deltaPct increases, long stop moves UP, short stop moves DOWN
+                const slShift = (deltaPct * 0.4);
+                const newStopPriceCalculated = isShort
+                  ? simPosition.entryPrice * (1 - slShift / 100)
+                  : simPosition.entryPrice * (1 + slShift / 100);
+
+                const isBetterSL = isShort 
+                  ? (newStopPriceCalculated < simPosition.stopPrice) 
+                  : (newStopPriceCalculated > simPosition.stopPrice);
+
+                if (isBetterSL) {
+                  simPosition.stopPrice = parseFloat(newStopPriceCalculated.toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2));
+                }
+              }
+            }
+
+            // Trailing TP activation level
+            const activationLevel = isShort
+              ? simPosition.entryPrice * (1 - trailActivePercent / 100)
+              : simPosition.entryPrice * (1 + trailActivePercent / 100);
+
+            const isActivated = isShort 
+              ? (curLow <= activationLevel)
+              : (curHigh >= activationLevel);
+
+            if (!simPosition.isTrailing && isActivated) {
+              simPosition.isTrailing = true;
+            }
+
+            // Evaluate exits with chronological priority: Trailing TP first, then Stop Loss, then core strategy signals
+            let shouldExit = false;
+            let exitReason = "";
+            let exitPrice = curPrice;
+
+            if (simPosition.isTrailing) {
+              const dropThreshold = isShort
+                ? simPosition.highestPrice * (1 + trailTpPercent / 100)
+                : simPosition.highestPrice * (1 - trailTpPercent / 100);
+
+              const isTrailingTriggered = isShort 
+                ? (curHigh >= dropThreshold)
+                : (curLow <= dropThreshold);
+
+              if (isTrailingTriggered) {
+                shouldExit = true;
+                exitReason = `📈 TRAILING TP (${isShort ? "SHORT" : "LONG"})`;
+                exitPrice = parseFloat(dropThreshold.toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2));
+              }
+            }
+
+            if (!shouldExit) {
+              const stopTriggered = isShort 
+                ? (curHigh >= simPosition.stopPrice) 
+                : (curLow <= simPosition.stopPrice);
+
+              if (stopTriggered) {
+                shouldExit = true;
+                exitReason = `🚨 STOP LOSS (${isShort ? "SHORT" : "LONG"})`;
+                exitPrice = simPosition.stopPrice;
+              }
+            }
+
+            if (!shouldExit) {
+              if (sellCond.includes("RSI") && curRsi > rsiSellThreshold) {
+                shouldExit = true;
+                exitReason = "🎯 CORE SIGNAL (RSI)";
+                exitPrice = curPrice;
+              } else if ((sellCond.includes("EMA") || sellCond.includes("scende sotto")) && curFast < curSlow && fastEma[t - 1] >= slowEma[t - 1]) {
+                shouldExit = true;
+                exitReason = "🎯 CORE SIGNAL (EMA)";
+                exitPrice = curPrice;
+              } else if (sellCond.includes("DV") || buyCond.includes("DV")) {
+                const currDV = deltaVolPcts[t] || 0;
+                if (isShort && currDV < -4) {
+                  shouldExit = true;
+                  exitReason = "🎯 CORE SIGNAL (DV Short Exit)";
+                  exitPrice = curPrice;
+                } else if (!isShort && currDV > 4) {
+                  shouldExit = true;
+                  exitReason = "🎯 CORE SIGNAL (DV Long Exit)";
+                  exitPrice = curPrice;
+                }
+              }
+            }
+
+            if (shouldExit) {
+              const tradeExitPnlPct = isShort
+                ? (((simPosition.entryPrice - exitPrice) / simPosition.entryPrice) * 100) * leverage
+                : (((exitPrice - simPosition.entryPrice) / simPosition.entryPrice) * 100) * leverage;
+              const tradeExitPnlAmt = (simPosition.allocated * tradeExitPnlPct) / 100;
+              
               simulatedTrades.push({
                 id: `bt-trade-${t}`,
                 symbol: `${coin}USDT`,
                 entryPrice: simPosition.entryPrice,
-                exitPrice: exitPriceEvaluated,
+                exitPrice: exitPrice,
                 entryTime: simPosition.entryTime,
                 exitTime: timeStr,
-                pnlPercent: stopLossPnlPct,
-                pnlAmount: stopLossPnlAmt,
-                closedReason: `🚨 STOP LOSS (${isShort ? "SHORT" : "LONG"})`
+                pnlPercent: tradeExitPnlPct,
+                pnlAmount: tradeExitPnlAmt,
+                closedReason: exitReason,
+                type: simPosition.type,
+                leverage: leverage
               });
-              walletBalance += (simPosition.allocated + stopLossPnlAmt);
+              walletBalance += (simPosition.allocated + tradeExitPnlAmt);
               simPosition = null;
-            }
-            else {
-              // Update trailing peak / extreme
-              const isNewPeak = isShort 
-                ? (curLow < simPosition.highestPrice) // for short, highestPrice tracks lowest price seen
-                : (curHigh > simPosition.highestPrice);
-
-              if (isNewPeak) {
-                simPosition.highestPrice = isShort ? curLow : curHigh;
-                // Trailing stop loss update
-                const deltaPct = isShort
-                  ? ((simPosition.entryPrice - curLow) / simPosition.entryPrice) * 100
-                  : ((curHigh - simPosition.entryPrice) / simPosition.entryPrice) * 100;
-
-                if (deltaPct > 1.5) {
-                  // as deltaPct increases, long stop moves UP, short stop moves DOWN
-                  const slShift = (deltaPct * 0.4);
-                  const newStopPriceCalculated = isShort
-                    ? simPosition.entryPrice * (1 - slShift / 100)
-                    : simPosition.entryPrice * (1 + slShift / 100);
-
-                  const isBetterSL = isShort 
-                    ? (newStopPriceCalculated < simPosition.stopPrice) 
-                    : (newStopPriceCalculated > simPosition.stopPrice);
-
-                  if (isBetterSL) {
-                    simPosition.stopPrice = parseFloat(newStopPriceCalculated.toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2));
-                  }
-                }
-              }
-
-              // Trailing TP activation level
-              const activationLevel = isShort
-                ? simPosition.entryPrice * (1 - trailActivePercent / 100)
-                : simPosition.entryPrice * (1 + trailActivePercent / 100);
-
-              const isActivated = isShort 
-                ? (curLow <= activationLevel)
-                : (curHigh >= activationLevel);
-
-              if (!simPosition.isTrailing && isActivated) {
-                simPosition.isTrailing = true;
-              }
-
-              let shouldExit = false;
-              let exitReason = "";
-              let exitPrice = curPrice;
-
-              if (simPosition.isTrailing) {
-                const dropThreshold = isShort
-                  ? simPosition.highestPrice * (1 + trailTpPercent / 100)
-                  : simPosition.highestPrice * (1 - trailTpPercent / 100);
-
-                const isTrailingTriggered = isShort 
-                  ? (curHigh >= dropThreshold)
-                  : (curLow <= dropThreshold);
-
-                if (isTrailingTriggered) {
-                  shouldExit = true;
-                  exitReason = `📈 TRAILING TP (${isShort ? "SHORT" : "LONG"})`;
-                  exitPrice = parseFloat(dropThreshold.toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2));
-                }
-              }
-
-              if (!shouldExit) {
-                if (sellCond.includes("RSI") && curRsi > rsiSellThreshold) {
-                  shouldExit = true;
-                  exitReason = "🎯 CORE SIGNAL (RSI)";
-                  exitPrice = curPrice;
-                } else if ((sellCond.includes("EMA") || sellCond.includes("scende sotto")) && curFast < curSlow && fastEma[t - 1] >= slowEma[t - 1]) {
-                  shouldExit = true;
-                  exitReason = "🎯 CORE SIGNAL (EMA)";
-                  exitPrice = curPrice;
-                } else if (sellCond.includes("DV") || buyCond.includes("DV")) {
-                  const currDV = deltaVolPcts[t] || 0;
-                  if (isShort && currDV < -4) {
-                    shouldExit = true;
-                    exitReason = "🎯 CORE SIGNAL (DV Short Exit)";
-                    exitPrice = curPrice;
-                  } else if (!isShort && currDV > 4) {
-                    shouldExit = true;
-                    exitReason = "🎯 CORE SIGNAL (DV Long Exit)";
-                    exitPrice = curPrice;
-                  }
-                }
-              }
-
-              if (shouldExit) {
-                const tradeExitPnlPct = isShort
-                  ? (((simPosition.entryPrice - exitPrice) / simPosition.entryPrice) * 100) * leverage
-                  : (((exitPrice - simPosition.entryPrice) / simPosition.entryPrice) * 100) * leverage;
-                const tradeExitPnlAmt = (simPosition.allocated * tradeExitPnlPct) / 100;
-                
-                simulatedTrades.push({
-                  id: `bt-trade-${t}`,
-                  symbol: `${coin}USDT`,
-                  entryPrice: simPosition.entryPrice,
-                  exitPrice: exitPrice,
-                  entryTime: simPosition.entryTime,
-                  exitTime: timeStr,
-                  pnlPercent: tradeExitPnlPct,
-                  pnlAmount: tradeExitPnlAmt,
-                  closedReason: exitReason
-                });
-                walletBalance += (simPosition.allocated + tradeExitPnlAmt);
-                simPosition = null;
-              }
             }
           }
         }
@@ -1849,7 +1911,9 @@ export default function App() {
           exitTime: times[numSteps - 1],
           pnlPercent: pPct,
           pnlAmount: pAmt,
-          closedReason: "⏳ FINE PERIODO"
+          closedReason: "⏳ FINE PERIODO",
+          type: simPosition.type,
+          leverage: leverage
         });
         walletBalance += (simPosition.allocated + pAmt);
       }
@@ -2760,7 +2824,7 @@ export default function App() {
                       <Layers3 className="h-4 w-4 text-cyan-400" />
                       Operazioni in Macchina ({openPositions.length})
                     </h3>
-                    <p className="text-[10px] text-slate-400">Posizioni Spot Bitget aperte</p>
+                    <p className="text-[10px] text-slate-400">Posizioni aperte (Spot / Futures)</p>
                   </div>
 
                   <span className={`text-xs font-bold font-mono ${totalOpenPnl >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
@@ -2785,9 +2849,15 @@ export default function App() {
                           <div className="flex justify-between font-bold text-white text-xs">
                             <span className="flex items-center gap-1">
                               {pos.symbol}
-                              <span className="text-[9px] bg-emerald-500/10 text-emerald-400 px-1 py-0.1 rounded">Spot LONG</span>
+                              <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold border ${
+                                pos.type === PositionType.SHORT 
+                                  ? "bg-rose-500/10 text-rose-400 border-rose-500/20" 
+                                  : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                              }`}>
+                                {pos.leverage && pos.leverage > 1 ? "Futures" : "Spot"} {pos.type === PositionType.SHORT ? "SHORT" : "LONG"}
+                              </span>
                               {pos.leverage && pos.leverage > 1 && (
-                                <span className="text-[9px] bg-cyan-500/15 text-cyan-400 px-1.5 py-0.1 rounded font-bold border border-cyan-500/20 font-mono">Leva {pos.leverage}x</span>
+                                <span className="text-[9px] bg-cyan-500/15 text-cyan-400 px-1.5 py-0.2 rounded font-bold border border-cyan-500/20 font-mono">Leva {pos.leverage}x</span>
                               )}
                             </span>
                             <span className={pos.pnlPercent >= 0 ? "text-emerald-400" : "text-rose-400"}>
@@ -3379,7 +3449,13 @@ export default function App() {
                               <tr key={tr.id} className="hover:bg-slate-900/30 font-mono">
                                 <td className="p-2.5 text-slate-400 whitespace-nowrap">{tr.exitTime}</td>
                                 <td className="p-2.5 text-slate-200">
-                                  <span className="bg-cyan-500/10 text-cyan-400 px-1.5 py-0.5 rounded font-bold border border-cyan-500/20 text-[10px]">LONG {backtestStrategy.riskManagement.leverage}x</span>
+                                  <span className={`px-1.5 py-0.5 rounded font-bold border text-[10px] ${
+                                    tr.type === PositionType.SHORT 
+                                      ? "bg-rose-500/10 text-rose-400 border-rose-500/20" 
+                                      : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                  }`}>
+                                    {tr.type === PositionType.SHORT ? "SHORT" : "LONG"} {(tr.leverage || backtestStrategy.riskManagement.leverage || 1)}x
+                                  </span>
                                 </td>
                                 <td className="p-2.5 text-slate-300">
                                   ${tr.entryPrice.toLocaleString(undefined, { minimumFractionDigits: tr.entryPrice < 10 ? 4 : 2 })} → ${tr.exitPrice.toLocaleString(undefined, { minimumFractionDigits: tr.exitPrice < 10 ? 4 : 2 })}
