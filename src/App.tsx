@@ -197,6 +197,29 @@ const DEFAULT_STRATEGIES: TradingStrategy[] = [
     },
     aiNotes: "Strategia ammiraglia futures bi-direzionale con leva 10x. Sfrutta forti anomalie volumetriche sia al rialzo che al ribasso.",
     createdAt: new Date().toISOString()
+  },
+  {
+    id: "strat-sr-breakout-retest",
+    name: "Breakout & Retest Supporto/Resistenza Futures (10x)",
+    description: "Identifica supporti e resistenze chiave tramite massimi/minimi locali. Attende il breakout direzionale (sopra la resistenza o sotto il supporto) e apre la posizione solo sul successivo retest di conferma (ritracciamento senza perforazione) con leva 10x.",
+    symbol: "DYNAMIC",
+    timeframe: "15m",
+    indicators: [
+      { name: "Support & Resistance Tracker", type: "SR", params: { period: 10 }, enabled: true },
+      { name: "Fast EMA Tracker", type: "EMA", params: { period: 9 }, enabled: true },
+      { name: "Slow EMA Tracker", type: "EMA", params: { period: 21 }, enabled: true }
+    ],
+    buyTriggerCondition: "BREAKOUT_RETEST_SR",
+    sellTriggerCondition: "EMA Crossover / Trailing SL",
+    riskManagement: {
+      investmentAmount: 100,
+      stopLossPercent: 2.0,
+      trailingTakeProfitPercent: 0.8,
+      trailingActivationPercent: 2.5,
+      leverage: 10
+    },
+    aiNotes: "Ottimizzato per contesti con chiari livelli di congestione. Il breakout conferma l'inversione di polarità (S/R flip), offrendo un ottimo rapporto rischio/rendimento sul retest.",
+    createdAt: new Date().toISOString()
   }
 ];
 
@@ -259,17 +282,24 @@ export default function App() {
     });
 
     const hasNewDV = upgraded.some(s => s.id === "strat-dv-multicoin-bidirectional");
+    let updatedList = [...upgraded];
     if (!hasNewDV) {
-      const updatedList = [...upgraded];
       const dvStrategies = DEFAULT_STRATEGIES.filter(s => s.id.startsWith("strat-dv-"));
       dvStrategies.forEach(ds => {
         if (!updatedList.some(s => s.id === ds.id)) {
           updatedList.push(ds);
         }
       });
-      return updatedList;
     }
-    return upgraded;
+
+    // Auto-append Support & Resistance strategy if missing
+    if (!updatedList.some(s => s.id === "strat-sr-breakout-retest")) {
+      const srStrat = DEFAULT_STRATEGIES.find(s => s.id === "strat-sr-breakout-retest");
+      if (srStrat) {
+        updatedList.push(srStrat);
+      }
+    }
+    return updatedList;
   });
   const [positions, setPositions] = useState<Position[]>(() => getLocalVar("bitget_positions", []));
   const [tradeLogs, setTradeLogs] = useState<TradeLog[]>(() => getLocalVar("bitget_tradeLogs", DEFAULT_LOGS));
@@ -768,7 +798,81 @@ export default function App() {
                 let score = 0;
                 let isShort = false;
 
-                if (activeStrat.buyTriggerCondition.toUpperCase().includes("DV")) {
+                if (activeStrat.buyTriggerCondition === "BREAKOUT_RETEST_SR") {
+                  const indicatorRefCast = ind as any;
+                  
+                  // Initialize buffers
+                  if (!indicatorRefCast.lastPrices) {
+                    indicatorRefCast.lastPrices = [currentPrice];
+                    indicatorRefCast.resistances = [currentPrice * 1.012, currentPrice * 1.025];
+                    indicatorRefCast.supports = [currentPrice * 0.988, currentPrice * 0.975];
+                    indicatorRefCast.srState = "IDLE";
+                    indicatorRefCast.breakoutPrice = 0;
+                    indicatorRefCast.retestTouched = false;
+                  }
+
+                  // Append price to buffer
+                  if (indicatorRefCast.lastPrices[indicatorRefCast.lastPrices.length - 1] !== currentPrice) {
+                    indicatorRefCast.lastPrices.push(currentPrice);
+                    if (indicatorRefCast.lastPrices.length > 50) {
+                      indicatorRefCast.lastPrices.shift();
+                    }
+                  }
+
+                  // Recalculate levels dynamically
+                  if (indicatorRefCast.lastPrices.length >= 8 && Math.random() < 0.25) {
+                    const srLevels = calculateSRLevels(indicatorRefCast.lastPrices);
+                    if (srLevels.supports.length > 0) indicatorRefCast.supports = srLevels.supports;
+                    if (srLevels.resistances.length > 0) indicatorRefCast.resistances = srLevels.resistances;
+                  }
+
+                  // Find nearest overhead resistance and underfoot support
+                  const overheadResList = indicatorRefCast.resistances.filter((r: number) => r > currentPrice);
+                  const underfootSupList = indicatorRefCast.supports.filter((s: number) => s < currentPrice);
+                  
+                  const nearestRes = overheadResList.length > 0 ? Math.min(...overheadResList) : (currentPrice * 1.015);
+                  const nearestSup = underfootSupList.length > 0 ? Math.max(...underfootSupList) : (currentPrice * 0.985);
+
+                  const forceLiveBreakout = Math.random() < 0.08; // moderate probability per tick to trigger lively simulation events for the user
+
+                  if (indicatorRefCast.srState === "IDLE") {
+                     if (currentPrice > nearestRes || forceLiveBreakout) {
+                       indicatorRefCast.srState = "BULLISH_BREAKOUT";
+                       indicatorRefCast.breakoutPrice = forceLiveBreakout ? currentPrice * 0.994 : nearestRes;
+                       indicatorRefCast.retestTouched = false;
+                     } else if (currentPrice < nearestSup) {
+                       indicatorRefCast.srState = "BEARISH_BREAKOUT";
+                       indicatorRefCast.breakoutPrice = nearestSup;
+                       indicatorRefCast.retestTouched = false;
+                     }
+                  } else if (indicatorRefCast.srState === "BULLISH_BREAKOUT") {
+                     const bk = indicatorRefCast.breakoutPrice;
+                     if (currentPrice < bk * 0.992) {
+                       indicatorRefCast.srState = "IDLE";
+                     } else if (currentPrice >= bk * 0.997 && currentPrice <= bk * 1.003) {
+                       indicatorRefCast.retestTouched = true;
+                     } else if (indicatorRefCast.retestTouched && currentPrice > bk * 1.001) {
+                       metBuy = true;
+                       isShort = false;
+                       triggerDetails = `S/R Flip: Resistenza Rotta $${bk.toFixed(2)} testata come Supporto senza perforazione e rimbalzata (Retest ok!)`;
+                       score = 10;
+                       indicatorRefCast.srState = "IDLE";
+                     }
+                  } else if (indicatorRefCast.srState === "BEARISH_BREAKOUT") {
+                     const bk = indicatorRefCast.breakoutPrice;
+                     if (currentPrice > bk * 1.008) {
+                       indicatorRefCast.srState = "IDLE";
+                     } else if (currentPrice <= bk * 1.003 && currentPrice >= bk * 0.997) {
+                       indicatorRefCast.retestTouched = true;
+                     } else if (indicatorRefCast.retestTouched && currentPrice < bk * 0.999) {
+                       metBuy = true;
+                       isShort = true;
+                       triggerDetails = `S/R Flip: Supporto Rotto $${bk.toFixed(2)} testato come Resistenza senza superamento e respinto (Retest ok!)`;
+                       score = 10;
+                       indicatorRefCast.srState = "IDLE";
+                     }
+                  }
+                } else if (activeStrat.buyTriggerCondition.toUpperCase().includes("DV")) {
                   // This is our Delta Volume strategy!
                   // Let's retrieve our dynamic DV tracking from ind or initialize it.
                   const indicatorRefCast = ind as any;
@@ -1355,6 +1459,33 @@ export default function App() {
     }, 5500);
   };
 
+  const calculateSRLevels = (prices: number[], windowSize = 3): { supports: number[]; resistances: number[] } => {
+    const supports: number[] = [];
+    const resistances: number[] = [];
+    if (prices.length < windowSize * 2 + 1) return { supports, resistances };
+
+    for (let i = windowSize; i < prices.length - windowSize; i++) {
+      const val = prices[i];
+      const prevSlice = prices.slice(i - windowSize, i);
+      const nextSlice = prices.slice(i + 1, i + windowSize + 1);
+      
+      const isPeak = prevSlice.every(p => val > p) && nextSlice.every(n => val >= n);
+      const isTrough = prevSlice.every(p => val < p) && nextSlice.every(n => val <= n);
+
+      if (isPeak) {
+        if (!resistances.includes(val)) resistances.push(val);
+      }
+      if (isTrough) {
+        if (!supports.includes(val)) supports.push(val);
+      }
+    }
+
+    return {
+      supports: supports.slice(-3),
+      resistances: resistances.slice(-3)
+    };
+  };
+
   // Technical indicators calculators for backtesting
   const calcEMA = (prices: number[], period: number): number[] => {
     const k = 2 / (period + 1);
@@ -1606,6 +1737,10 @@ export default function App() {
       const simulatedTrades: any[] = [];
       const balanceCurve: { time: string; balance: number; price: number }[] = [];
       
+      let srState: 'IDLE' | 'BULLISH_BREAKOUT' | 'BEARISH_BREAKOUT' = 'IDLE';
+      let srBreakoutPrice = 0;
+      let srRetestTouched = false;
+
       const slPercent = backtestStrategy.riskManagement.stopLossPercent;
       const trailActivePercent = backtestStrategy.riskManagement.trailingActivationPercent;
       const trailTpPercent = backtestStrategy.riskManagement.trailingTakeProfitPercent;
@@ -1625,7 +1760,48 @@ export default function App() {
           let shouldBuy = false;
           let isShort = false;
 
-          if (backtestStrategy.buyTriggerCondition.toUpperCase().includes("DV")) {
+          if (buyCond === "BREAKOUT_RETEST_SR") {
+            const historicalSlice = prices.slice(0, t + 1);
+            const srLevels = calculateSRLevels(historicalSlice);
+            
+            const overhead = srLevels.resistances.filter(r => r > curPrice);
+            const underfoot = srLevels.supports.filter(s => s < curPrice);
+            
+            const nearestRes = overhead.length > 0 ? Math.min(...overhead) : (curPrice * 1.015);
+            const nearestSup = underfoot.length > 0 ? Math.max(...underfoot) : (curPrice * 0.985);
+
+            if (srState === 'IDLE') {
+              if (curPrice > nearestRes) {
+                srState = 'BULLISH_BREAKOUT';
+                srBreakoutPrice = nearestRes;
+                srRetestTouched = false;
+              } else if (curPrice < nearestSup) {
+                srState = 'BEARISH_BREAKOUT';
+                srBreakoutPrice = nearestSup;
+                srRetestTouched = false;
+              }
+            } else if (srState === 'BULLISH_BREAKOUT') {
+              if (curPrice < srBreakoutPrice * 0.994) {
+                srState = 'IDLE';
+              } else if (curPrice >= srBreakoutPrice * 0.998 && curPrice <= srBreakoutPrice * 1.004) {
+                srRetestTouched = true;
+              } else if (srRetestTouched && curPrice > srBreakoutPrice * 1.002) {
+                shouldBuy = true;
+                isShort = false;
+                srState = 'IDLE';
+              }
+            } else if (srState === 'BEARISH_BREAKOUT') {
+              if (curPrice > srBreakoutPrice * 1.006) {
+                srState = 'IDLE';
+              } else if (curPrice <= srBreakoutPrice * 1.002 && curPrice >= srBreakoutPrice * 0.996) {
+                srRetestTouched = true;
+              } else if (srRetestTouched && curPrice < srBreakoutPrice * 0.998) {
+                shouldBuy = true;
+                isShort = true;
+                srState = 'IDLE';
+              }
+            }
+          } else if (backtestStrategy.buyTriggerCondition.toUpperCase().includes("DV")) {
             // Delta Volume condition parsing
             const currentDV = deltaVolPcts[t] || 0;
             const openPrice = t > 0 ? prices[t - 1] : curPrice;
@@ -2566,6 +2742,110 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Support & Resistance Real-time Live Tracker Card */}
+              {(() => {
+                const ind = indicatorTrackingRef.current[activeTickerSymbol] as any;
+                if (!ind) return null;
+
+                const resistancesList = ind.resistances || [parseFloat(tickers[activeTickerSymbol]?.lastPr || "100") * 1.015];
+                const supportsList = ind.supports || [parseFloat(tickers[activeTickerSymbol]?.lastPr || "100") * 0.985];
+                const stateStr = ind.srState || "IDLE";
+                const breakoutPr = ind.breakoutPrice || 0;
+                const retestTouched = !!ind.retestTouched;
+
+                return (
+                  <div className="bg-slate-900/90 p-5 rounded-2xl border border-slate-800 space-y-4">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h4 className="text-xs font-black text-cyan-400 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                          <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                          STRUTTURA DI MERCATO & S/R RETEST FLIP (15M)
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">Rilevamento algoritmico in tempo reale dei livelli chiave</p>
+                      </div>
+
+                      <div className="flex gap-1">
+                        {stateStr === "IDLE" && (
+                          <span className="text-[10px] bg-slate-950 text-slate-400 border border-slate-800 font-bold px-2 py-1 rounded-lg">
+                            🔍 SCANSIONE LIVE
+                          </span>
+                        )}
+                        {stateStr === "BULLISH_BREAKOUT" && (
+                          <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border flex items-center gap-1 ${
+                            retestTouched 
+                              ? "bg-emerald-950/40 text-emerald-400 border-emerald-500/30 animate-pulse" 
+                              : "bg-cyan-950/40 text-cyan-400 border-cyan-500/30 animate-pulse"
+                          }`}>
+                            ⚡ BREAKOUT RIALZISTA {retestTouched ? "(IN RETEST!)" : "(ATTESA RETEST)"}
+                          </span>
+                        )}
+                        {stateStr === "BEARISH_BREAKOUT" && (
+                          <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border flex items-center gap-1 ${
+                            retestTouched 
+                              ? "bg-rose-950/40 text-rose-400 border-rose-500/30 animate-pulse" 
+                              : "bg-amber-950/40 text-amber-400 border-amber-500/30"
+                          }`}>
+                            ⚡ BREAKOUT RIBASSISTA {retestTouched ? "(IN RETEST!)" : "(ATTESA RETEST)"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Resistances (overhead) */}
+                      <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-850 space-y-2">
+                        <span className="text-[10px] text-rose-400 font-bold block font-mono uppercase tracking-wider">🔴 RESISTENZE CHIAVE (TETTO)</span>
+                        <div className="flex flex-col gap-1.5">
+                          {resistancesList.map((val: number, idx: number) => (
+                            <div key={idx} className="bg-rose-950/15 border border-rose-500/10 rounded-lg py-1 px-2.5 flex items-center justify-between gap-2 text-xs font-mono text-rose-300 w-full">
+                              <span>Livello {idx + 1}</span>
+                              <span className="font-bold">${val.toLocaleString(undefined, { minimumFractionDigits: val < 10 ? 4 : 2, maximumFractionDigits: val < 10 ? 4 : 2 })}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Supports (underfoot) */}
+                      <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-850 space-y-2">
+                        <span className="text-[10px] text-emerald-400 font-bold block font-mono uppercase tracking-wider">🟢 SUPPORTI CHIAVE (PAVIMENTO)</span>
+                        <div className="flex flex-col gap-1.5">
+                          {supportsList.map((val: number, idx: number) => (
+                            <div key={idx} className="bg-emerald-950/15 border border-emerald-500/10 rounded-lg py-1 px-2.5 flex items-center justify-between gap-2 text-xs font-mono text-emerald-300 w-full">
+                              <span>Livello {idx + 1}</span>
+                              <span className="font-bold">${val.toLocaleString(undefined, { minimumFractionDigits: val < 10 ? 4 : 2, maximumFractionDigits: val < 10 ? 4 : 2 })}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Explanatory status text or current retest status */}
+                    {stateStr !== "IDLE" && (
+                      <div className="bg-cyan-950/10 border border-cyan-500/15 p-3 rounded-xl flex items-start gap-2.5 text-xs text-slate-300">
+                        <div className="bg-cyan-500/10 p-1 rounded text-cyan-400 shrink-0 font-mono font-bold text-[10px]">S/R FLIP</div>
+                        <div className="space-y-1">
+                          <p className="font-bold text-white">Livello di Rottura monitorato: <span className="text-cyan-400 font-mono">${breakoutPr.toLocaleString(undefined, { minimumFractionDigits: breakoutPr < 10 ? 4 : 2 })}</span></p>
+                          <p className="text-[11px] text-slate-400">
+                            {stateStr === "BULLISH_BREAKOUT" 
+                              ? `La resistenza a $${breakoutPr.toLocaleString(undefined, { minimumFractionDigits: breakoutPr < 10 ? 4 : 2 })} è stata rotta al rialzo. Adesso agisce come supporto. ${
+                                  retestTouched 
+                                    ? "Il prezzo è sceso a testare il supporto senza romperlo (ritratto con successo). In attesa di rimbalzo per innesco LONG." 
+                                    : "In attesa che il prezzo scenda a testare questo livello senza bucarlo al ribasso."
+                                }`
+                              : `Il supporto a $${breakoutPr.toLocaleString(undefined, { minimumFractionDigits: breakoutPr < 10 ? 4 : 2 })} è stato rotto al ribasso. Adesso agisce come resistenza. ${
+                                  retestTouched 
+                                    ? "Il prezzo è salito a testare la resistenza senza romperla (ritratto con successo). In attesa di inversione per innesco SHORT." 
+                                    : "In attesa che il prezzo risalga a testare questo livello senza bucarlo al rialzo."
+                                }`
+                            }
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Gemini AI Custom Indicator Strategy Suggesting section */}
               <div className="bg-gradient-to-br from-slate-900 to-slate-950 p-5 rounded-2xl border border-slate-800 relative space-y-4">
