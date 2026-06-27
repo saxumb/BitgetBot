@@ -1769,7 +1769,8 @@ export default function App() {
 
           if (buyCond === "BREAKOUT_RETEST_SR") {
             const historicalSlice = prices.slice(0, t);
-            const srLevels = calculateSRLevels(historicalSlice);
+            const windowSize = backtestPeriod === 90 ? 2 : 3;
+            const srLevels = calculateSRLevels(historicalSlice, windowSize);
             
             let resistancesList = srLevels.resistances;
             let supportsList = srLevels.supports;
@@ -1785,8 +1786,11 @@ export default function App() {
             }
 
             const prevPrice = t > 0 ? prices[t - 1] : curPrice * 0.998;
-            const crossedRes = resistancesList.find(r => prevPrice <= r && curPrice > r);
-            const crossedSup = supportsList.find(s => prevPrice >= s && curPrice < s);
+            
+            // For 90 days (12h klines), we use wider tolerance bands to find breakouts
+            const tolerance = backtestPeriod === 90 ? 0.005 : 0.002;
+            const crossedRes = resistancesList.find(r => prevPrice <= r * (1 + tolerance) && curPrice > r * (1 - tolerance));
+            const crossedSup = supportsList.find(s => prevPrice >= s * (1 - tolerance) && curPrice < s * (1 + tolerance));
 
             if (srState === 'IDLE') {
               if (crossedRes) {
@@ -1800,22 +1804,30 @@ export default function App() {
               }
             } else if (srState === 'BULLISH_BREAKOUT') {
               const R = srBreakoutPrice;
-              if (curPrice < R * 0.992) {
+              const failMargin = backtestPeriod === 90 ? 0.985 : 0.992;
+              const retestUpper = backtestPeriod === 90 ? 1.012 : 1.006;
+              const retestLower = backtestPeriod === 90 ? 0.988 : 0.994;
+
+              if (curPrice < R * failMargin) {
                 srState = 'IDLE'; // Broken below support - breakout failed
-              } else if (curLow <= R * 1.006 && curPrice >= R * 0.994) {
+              } else if (curLow <= R * retestUpper && curPrice >= R * retestLower) {
                 srRetestTouched = true; // Retest of level as support
               }
               
-              if (srRetestTouched && curPrice > R * 1.002) {
+              if (srRetestTouched && curPrice > R * 1.001) {
                 shouldBuy = true;
                 isShort = false;
                 srState = 'IDLE'; // Successfully bought on retest bounce!
               }
             } else if (srState === 'BEARISH_BREAKOUT') {
               const S = srBreakoutPrice;
-              if (curPrice > S * 1.008) {
+              const failMargin = backtestPeriod === 90 ? 1.015 : 1.008;
+              const retestUpper = backtestPeriod === 90 ? 1.012 : 1.006;
+              const retestLower = backtestPeriod === 90 ? 0.988 : 0.994;
+
+              if (curPrice > S * failMargin) {
                 srState = 'IDLE'; // Broken above resistance - breakout failed
-              } else if (curHigh >= S * 0.994 && curPrice <= S * 1.006) {
+              } else if (curHigh >= S * retestLower && curPrice <= S * retestUpper) {
                 srRetestTouched = true; // Retest of level as resistance
               }
               
