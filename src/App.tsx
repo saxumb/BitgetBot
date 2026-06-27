@@ -1923,38 +1923,24 @@ export default function App() {
             const openPrice = t > 0 ? prices[t - 1] : curPrice;
             const pctChange = ((curPrice - openPrice) / openPrice) * 100;
 
-            // Dynamically scale thresholds based on backtest period (timeframe compression)
-            let dvThreshold = 4.5;
-            let priceChangeLimit = 0.05;
-            if (backtestPeriod === 7) {
-              dvThreshold = 3.5;
-              priceChangeLimit = 0.15;
-            } else if (backtestPeriod === 30) {
-              dvThreshold = 2.0;
-              priceChangeLimit = 0.40;
-            } else if (backtestPeriod === 90) {
-              dvThreshold = 1.0;
-              priceChangeLimit = 1.00;
-            }
-
             if (backtestStrategy.id === "strat-dv-multicoin-bidirectional") {
               // BI-DIRECTIONAL: can go LONG or SHORT
-              if (currentDV < -dvThreshold && pctChange >= -priceChangeLimit) {
+              if (currentDV < -4.5 && pctChange >= -0.05) {
                 shouldBuy = true;
                 isShort = false;
-              } else if (currentDV > dvThreshold && pctChange <= priceChangeLimit) {
+              } else if (currentDV > 4.5 && pctChange <= 0.05) {
                 shouldBuy = true;
                 isShort = true;
               }
             } else if (backtestStrategy.buyTriggerCondition.includes("DV <") || backtestStrategy.id === "strat-dv-absorption-sol") {
               // Target LONG: strongly negative DV, but price struggles to fall (flat or positive % change)
-              if (currentDV < -dvThreshold && pctChange >= -priceChangeLimit) {
+              if (currentDV < -4.5 && pctChange >= -0.05) {
                 shouldBuy = true;
                 isShort = false;
               }
             } else if (backtestStrategy.buyTriggerCondition.includes("DV >") || backtestStrategy.id === "strat-dv-distribution-xrp") {
               // Target SHORT: strongly positive DV, but price struggles to rise (flat or negative % change)
-              if (currentDV > dvThreshold && pctChange <= priceChangeLimit) {
+              if (currentDV > 4.5 && pctChange <= 0.05) {
                 shouldBuy = true;
                 isShort = true;
               }
@@ -2006,35 +1992,18 @@ export default function App() {
           }
 
           if (shouldBuy && walletBalance >= allocatedPerTrade) {
-            // Calcola la volatilità adattiva di backtest
-            let backtestAdaptiveSL = slPercent;
-            let backtestVol = 0.5;
-            if (t >= 5) {
-              const windowStart = Math.max(0, t - 15);
-              const slice = prices.slice(windowStart, t + 1);
-              const sliceMean = slice.reduce((a, b) => a + b, 0) / slice.length;
-              const sliceVariance = slice.reduce((a, b) => a + Math.pow(b - sliceMean, 2), 0) / slice.length;
-              const sliceStdDev = Math.sqrt(sliceVariance);
-              backtestVol = sliceMean > 0 ? (sliceStdDev / sliceMean) * 100 : 0.5;
-              
-              const multiplier = backtestVol / 0.5;
-              backtestAdaptiveSL = Math.max(0.4, Math.min(6.0, slPercent * Math.sqrt(multiplier)));
-            }
-
             simPosition = {
               entryPrice: curPrice,
               highestPrice: curPrice, // In SHORT, highestPrice will track the lowest price seen so far
               stopPrice: isShort
-                ? parseFloat((curPrice * (1 + backtestAdaptiveSL / 100)).toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2))
-                : parseFloat((curPrice * (1 - backtestAdaptiveSL / 100)).toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2)),
+                ? parseFloat((curPrice * (1 + slPercent / 100)).toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2))
+                : parseFloat((curPrice * (1 - slPercent / 100)).toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2)),
               entryIndex: t,
               isActive: true,
               isTrailing: false,
               allocated: allocatedPerTrade,
               entryTime: timeStr,
-              type: isShort ? PositionType.SHORT : PositionType.LONG,
-              volatilityAtEntry: backtestVol,
-              stopLossPercentAtEntry: backtestAdaptiveSL
+              type: isShort ? PositionType.SHORT : PositionType.LONG
             };
             walletBalance -= allocatedPerTrade;
           }
@@ -2164,20 +2133,11 @@ export default function App() {
                 exitPrice = curPrice;
               } else if (sellCond.includes("DV") || buyCond.includes("DV")) {
                 const currDV = deltaVolPcts[t] || 0;
-                let dvExitThreshold = 4.0;
-                if (backtestPeriod === 7) {
-                  dvExitThreshold = 3.0;
-                } else if (backtestPeriod === 30) {
-                  dvExitThreshold = 1.8;
-                } else if (backtestPeriod === 90) {
-                  dvExitThreshold = 0.8;
-                }
-                
-                if (isShort && currDV < -dvExitThreshold) {
+                if (isShort && currDV < -4) {
                   shouldExit = true;
                   exitReason = "🎯 CORE SIGNAL (DV Short Exit)";
                   exitPrice = curPrice;
-                } else if (!isShort && currDV > dvExitThreshold) {
+                } else if (!isShort && currDV > 4) {
                   shouldExit = true;
                   exitReason = "🎯 CORE SIGNAL (DV Long Exit)";
                   exitPrice = curPrice;
