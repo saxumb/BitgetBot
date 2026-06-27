@@ -67,6 +67,8 @@ export interface Position {
   closeReason?: string;
   isTrailingActive: boolean;
   leverage?: number;
+  volatilityAtEntry?: number;
+  stopLossPercentAtEntry?: number;
 }
 
 export interface TradeLog {

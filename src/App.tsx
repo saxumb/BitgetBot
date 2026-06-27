@@ -357,6 +357,43 @@ export default function App() {
   // Reference tracker for logs to detect new executions for alerts
   const lastLogIdRef = useRef<string | null>(null);
   const indicatorTrackingRef = useRef<Record<string, { rsi: number; emaShort: number; emaLong: number; dv?: number }>>({});
+  const priceHistoryRef = useRef<Record<string, number[]>>({});
+
+  // Calcola la volatilità istantanea (Deviazione Standard % sulle ultime 20 quotazioni)
+  const getVolatility = (sym: string): { volatility: number; adaptiveSL: number } => {
+    const history = priceHistoryRef.current[sym] || [];
+    if (history.length < 5) {
+      const tick = tickers[sym];
+      if (tick && tick.high24h && tick.low24h) {
+        const h = parseFloat(tick.high24h);
+        const l = parseFloat(tick.low24h);
+        if (l > 0) {
+          const rangePct = ((h - l) / l) * 100;
+          const estimatedVol = Math.max(0.2, Math.min(3.0, rangePct / 12));
+          const baseSL = activeStrategyId 
+            ? (strategies.find(s => s.id === activeStrategyId)?.riskManagement.stopLossPercent || 2.0)
+            : 2.0;
+          const adaptiveSL = Math.max(0.4, Math.min(5.0, baseSL * (estimatedVol / 0.8)));
+          return { volatility: estimatedVol, adaptiveSL };
+        }
+      }
+      return { volatility: 0.6, adaptiveSL: 1.5 };
+    }
+    
+    const mean = history.reduce((a, b) => a + b, 0) / history.length;
+    const variance = history.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / history.length;
+    const stdDev = Math.sqrt(variance);
+    const volatility = (stdDev / mean) * 100;
+    
+    const baseSL = activeStrategyId 
+      ? (strategies.find(s => s.id === activeStrategyId)?.riskManagement.stopLossPercent || 2.0)
+      : 2.0;
+    
+    const multiplier = volatility / 0.5;
+    const adaptiveSL = Math.max(0.4, Math.min(6.0, baseSL * Math.sqrt(multiplier)));
+    
+    return { volatility, adaptiveSL };
+  };
 
   // Synchronize localStorage when local states change under Static Mode
   useEffect(() => {
@@ -409,6 +446,16 @@ export default function App() {
         // Sync local indicator tracking matching prices
         Object.keys(mapped).forEach((sym) => {
           const p = parseFloat(mapped[sym].lastPr);
+          
+          // Track price history for volatility calculations
+          if (!priceHistoryRef.current[sym]) {
+            priceHistoryRef.current[sym] = [];
+          }
+          priceHistoryRef.current[sym].push(p);
+          if (priceHistoryRef.current[sym].length > 20) {
+            priceHistoryRef.current[sym].shift();
+          }
+
           if (!indicatorTrackingRef.current[sym]) {
             indicatorTrackingRef.current[sym] = {
               rsi: 40 + Math.random() * 20,
@@ -554,6 +601,15 @@ export default function App() {
           tick.askPr = (newP + vol * 0.1).toFixed(decimalPoints);
           
           next[sym] = tick;
+
+          // Track price history for volatility calculations
+          if (!priceHistoryRef.current[sym]) {
+            priceHistoryRef.current[sym] = [];
+          }
+          priceHistoryRef.current[sym].push(newP);
+          if (priceHistoryRef.current[sym].length > 20) {
+            priceHistoryRef.current[sym].shift();
+          }
 
           // Update indicator tracking ref
           const ind = indicatorTrackingRef.current[sym] || { rsi: 50, emaShort: newP, emaLong: newP };
@@ -1021,9 +1077,13 @@ export default function App() {
                   const pctSL = activeStrat.riskManagement.stopLossPercent;
                   const pctActivation = activeStrat.riskManagement.trailingActivationPercent;
                   
+                  // Volatility-Adapted Stop Loss (SL dinamico adattato alla volatilità istantanea)
+                  const volData = getVolatility(symbol);
+                  const activeSLPercent = volData.adaptiveSL;
+                  
                   const stopLoss = isShort
-                    ? currentPrice * (1 + pctSL / 100)
-                    : currentPrice * (1 - pctSL / 100);
+                    ? currentPrice * (1 + activeSLPercent / 100)
+                    : currentPrice * (1 - activeSLPercent / 100);
 
                   const tpPrice = isShort
                     ? currentPrice * (1 - (pctActivation * 1.5) / 100)
@@ -1049,7 +1109,9 @@ export default function App() {
                     status: "OPEN",
                     openedAt: new Date().toISOString(),
                     isTrailingActive: false,
-                    leverage: leverageVal
+                    leverage: leverageVal,
+                    volatilityAtEntry: volData.volatility,
+                    stopLossPercentAtEntry: activeSLPercent
                   };
 
                   if (botMode === BotMode.SIMULATED) {
@@ -1066,7 +1128,7 @@ export default function App() {
                     type: logType,
                     symbol: symbol,
                     strategyName: activeStrat.name,
-                    message: `🛒 Operazione ${actionWord} ${isDynamic ? "DINAMICA" : "ALL-IN"} Eseguita! Scelta Coppia Ottimale: ${symbol} @ $${currentPrice.toLocaleString()} con ${triggerDetails} investendo €${amountToInvest.toFixed(2)} a leva ${leverageVal}x`
+                    message: `🛒 Operazione ${actionWord} ${isDynamic ? "DINAMICA" : "ALL-IN"} Eseguita! Coppia: ${symbol} @ $${currentPrice.toLocaleString()} con ${triggerDetails}. Configurato Stop-Loss adattivo alla volatilità live: ${activeSLPercent.toFixed(2)}% (Vol: ${volData.volatility.toFixed(3)}%)`
                   });
                 }
               }
@@ -1755,6 +1817,8 @@ export default function App() {
         allocated: number;
         entryTime: string;
         type?: PositionType;
+        volatilityAtEntry?: number;
+        stopLossPercentAtEntry?: number;
       } | null = null;
 
       const simulatedTrades: any[] = [];
@@ -1942,18 +2006,35 @@ export default function App() {
           }
 
           if (shouldBuy && walletBalance >= allocatedPerTrade) {
+            // Calcola la volatilità adattiva di backtest
+            let backtestAdaptiveSL = slPercent;
+            let backtestVol = 0.5;
+            if (t >= 5) {
+              const windowStart = Math.max(0, t - 15);
+              const slice = prices.slice(windowStart, t + 1);
+              const sliceMean = slice.reduce((a, b) => a + b, 0) / slice.length;
+              const sliceVariance = slice.reduce((a, b) => a + Math.pow(b - sliceMean, 2), 0) / slice.length;
+              const sliceStdDev = Math.sqrt(sliceVariance);
+              backtestVol = sliceMean > 0 ? (sliceStdDev / sliceMean) * 100 : 0.5;
+              
+              const multiplier = backtestVol / 0.5;
+              backtestAdaptiveSL = Math.max(0.4, Math.min(6.0, slPercent * Math.sqrt(multiplier)));
+            }
+
             simPosition = {
               entryPrice: curPrice,
               highestPrice: curPrice, // In SHORT, highestPrice will track the lowest price seen so far
               stopPrice: isShort
-                ? parseFloat((curPrice * (1 + slPercent / 100)).toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2))
-                : parseFloat((curPrice * (1 - slPercent / 100)).toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2)),
+                ? parseFloat((curPrice * (1 + backtestAdaptiveSL / 100)).toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2))
+                : parseFloat((curPrice * (1 - backtestAdaptiveSL / 100)).toFixed(coin === "XRP" || coin === "ADA" ? 4 : 2)),
               entryIndex: t,
               isActive: true,
               isTrailing: false,
               allocated: allocatedPerTrade,
               entryTime: timeStr,
-              type: isShort ? PositionType.SHORT : PositionType.LONG
+              type: isShort ? PositionType.SHORT : PositionType.LONG,
+              volatilityAtEntry: backtestVol,
+              stopLossPercentAtEntry: backtestAdaptiveSL
             };
             walletBalance -= allocatedPerTrade;
           }
@@ -2948,7 +3029,7 @@ export default function App() {
                       <p className="text-[11px] text-slate-400 mt-0.5">Scansione del flusso volumetrico spot e momentum in tempo reale</p>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                       {/* Delta Volume Widget */}
                       <div className="bg-slate-950/50 p-3.5 rounded-xl border border-slate-850 space-y-2.5">
                         <div className="flex justify-between items-center">
@@ -3050,6 +3131,44 @@ export default function App() {
                           </span>
                         </div>
                       </div>
+
+                      {/* Volatility & Adaptive SL Widget */}
+                      {(() => {
+                        const volData = getVolatility(activeTickerSymbol);
+                        return (
+                          <div className="bg-slate-950/50 p-3.5 rounded-xl border border-slate-850 space-y-2.5">
+                            <div className="flex justify-between items-center">
+                              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-mono flex items-center gap-1">
+                                <ShieldAlert className="h-3.5 w-3.5 text-amber-400" /> Volatilità Real-time
+                              </span>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded font-black font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                ADATTIVO
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                              <div className="bg-slate-900/40 p-1.5 rounded border border-slate-800">
+                                <span className="text-[9px] text-slate-500 block">Dev Standard (20t)</span>
+                                <span className="text-white font-bold">{volData.volatility.toFixed(3)}%</span>
+                              </div>
+                              <div className="bg-slate-900/40 p-1.5 rounded border border-slate-800">
+                                <span className="text-[9px] text-slate-500 block">Stop-Loss Adattato</span>
+                                <span className="text-rose-400 font-bold">{volData.adaptiveSL.toFixed(2)}%</span>
+                              </div>
+                            </div>
+
+                            <p className="text-[9px] text-slate-400 leading-snug">
+                              {volData.volatility > 0.8 ? (
+                                <span className="text-red-400 font-bold">⚠️ Volatilità ELEVATA: stop-loss allargato per rumore</span>
+                              ) : volData.volatility < 0.4 ? (
+                                <span className="text-emerald-400 font-bold">🛡️ Volatilità BASSA: stop-loss stretto e preciso</span>
+                              ) : (
+                                <span className="text-slate-400">⚖️ Volatilità moderata: parametri standard ottimali</span>
+                              )}
+                            </p>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
@@ -3362,6 +3481,20 @@ export default function App() {
 
                             <span>Stop Loss DIN:</span>
                             <span className="text-right text-rose-400 font-bold">${pos.stopLossPrice.toLocaleString()}</span>
+
+                            {pos.stopLossPercentAtEntry !== undefined && (
+                              <>
+                                <span>SL Adattivo Entry:</span>
+                                <span className="text-right text-rose-400 font-medium">{pos.stopLossPercentAtEntry.toFixed(2)}%</span>
+                              </>
+                            )}
+
+                            {pos.volatilityAtEntry !== undefined && (
+                              <>
+                                <span>Volatilità Entry:</span>
+                                <span className="text-right text-amber-400 font-medium">{pos.volatilityAtEntry.toFixed(3)}%</span>
+                              </>
+                            )}
 
                             <span>Inseguimento TP:</span>
                             {pos.isTrailingActive ? (
