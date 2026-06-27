@@ -356,7 +356,7 @@ export default function App() {
   
   // Reference tracker for logs to detect new executions for alerts
   const lastLogIdRef = useRef<string | null>(null);
-  const indicatorTrackingRef = useRef<Record<string, { rsi: number; emaShort: number; emaLong: number }>>({});
+  const indicatorTrackingRef = useRef<Record<string, { rsi: number; emaShort: number; emaLong: number; dv?: number }>>({});
 
   // Synchronize localStorage when local states change under Static Mode
   useEffect(() => {
@@ -413,12 +413,19 @@ export default function App() {
             indicatorTrackingRef.current[sym] = {
               rsi: 40 + Math.random() * 20,
               emaShort: p,
-              emaLong: p
+              emaLong: p,
+              dv: (Math.random() - 0.5) * 14
             };
           } else {
             const ind = indicatorTrackingRef.current[sym];
             ind.emaShort = ind.emaShort * 0.4 + p * 0.6;
             ind.emaLong = ind.emaLong * 0.6 + p * 0.4;
+            if (ind.dv === undefined) {
+              ind.dv = (Math.random() - 0.5) * 14;
+            } else {
+              const trendBias = ((ind.emaShort - ind.emaLong) / ind.emaLong) * 15;
+              ind.dv = Math.max(-15, Math.min(15, ind.dv * 0.85 + (Math.random() - 0.5) * 3 + trendBias));
+            }
           }
         });
       }
@@ -515,7 +522,7 @@ export default function App() {
 
     // Seed indicator tracking ref if empty
     if (Object.keys(indicatorTrackingRef.current).length === 0) {
-      const tracker: Record<string, { rsi: number; emaShort: number; emaLong: number }> = {};
+      const tracker: Record<string, { rsi: number; emaShort: number; emaLong: number; dv?: number }> = {};
       Object.keys(tickers).forEach((sym) => {
         const t = tickers[sym];
         const val = t ? parseFloat(t.lastPr) : 100;
@@ -523,6 +530,7 @@ export default function App() {
           rsi: 40 + Math.random() * 20,
           emaShort: val,
           emaLong: val,
+          dv: (Math.random() - 0.5) * 14
         };
       });
       indicatorTrackingRef.current = tracker;
@@ -552,6 +560,14 @@ export default function App() {
           ind.rsi = Math.max(15, Math.min(85, ind.rsi + (Math.random() - 0.5) * 2));
           ind.emaShort = ind.emaShort * 0.95 + newP * 0.05;
           ind.emaLong = ind.emaLong * 0.98 + newP * 0.02;
+          
+          if (ind.dv === undefined) {
+            ind.dv = (Math.random() - 0.5) * 14;
+          } else {
+            const trendBias = ((ind.emaShort - ind.emaLong) / ind.emaLong) * 15;
+            ind.dv = Math.max(-15, Math.min(15, ind.dv * 0.85 + (Math.random() - 0.5) * 3 + trendBias));
+          }
+          
           indicatorTrackingRef.current[sym] = ind;
         });
         localStorage.setItem("bitget_tickers", JSON.stringify(next));
@@ -1843,24 +1859,38 @@ export default function App() {
             const openPrice = t > 0 ? prices[t - 1] : curPrice;
             const pctChange = ((curPrice - openPrice) / openPrice) * 100;
 
+            // Dynamically scale thresholds based on backtest period (timeframe compression)
+            let dvThreshold = 4.5;
+            let priceChangeLimit = 0.05;
+            if (backtestPeriod === 7) {
+              dvThreshold = 3.5;
+              priceChangeLimit = 0.15;
+            } else if (backtestPeriod === 30) {
+              dvThreshold = 2.0;
+              priceChangeLimit = 0.40;
+            } else if (backtestPeriod === 90) {
+              dvThreshold = 1.0;
+              priceChangeLimit = 1.00;
+            }
+
             if (backtestStrategy.id === "strat-dv-multicoin-bidirectional") {
               // BI-DIRECTIONAL: can go LONG or SHORT
-              if (currentDV < -4.5 && pctChange >= -0.05) {
+              if (currentDV < -dvThreshold && pctChange >= -priceChangeLimit) {
                 shouldBuy = true;
                 isShort = false;
-              } else if (currentDV > 4.5 && pctChange <= 0.05) {
+              } else if (currentDV > dvThreshold && pctChange <= priceChangeLimit) {
                 shouldBuy = true;
                 isShort = true;
               }
             } else if (backtestStrategy.buyTriggerCondition.includes("DV <") || backtestStrategy.id === "strat-dv-absorption-sol") {
               // Target LONG: strongly negative DV, but price struggles to fall (flat or positive % change)
-              if (currentDV < -4.5 && pctChange >= -0.05) {
+              if (currentDV < -dvThreshold && pctChange >= -priceChangeLimit) {
                 shouldBuy = true;
                 isShort = false;
               }
             } else if (backtestStrategy.buyTriggerCondition.includes("DV >") || backtestStrategy.id === "strat-dv-distribution-xrp") {
               // Target SHORT: strongly positive DV, but price struggles to rise (flat or negative % change)
-              if (currentDV > 4.5 && pctChange <= 0.05) {
+              if (currentDV > dvThreshold && pctChange <= priceChangeLimit) {
                 shouldBuy = true;
                 isShort = true;
               }
@@ -2053,11 +2083,20 @@ export default function App() {
                 exitPrice = curPrice;
               } else if (sellCond.includes("DV") || buyCond.includes("DV")) {
                 const currDV = deltaVolPcts[t] || 0;
-                if (isShort && currDV < -4) {
+                let dvExitThreshold = 4.0;
+                if (backtestPeriod === 7) {
+                  dvExitThreshold = 3.0;
+                } else if (backtestPeriod === 30) {
+                  dvExitThreshold = 1.8;
+                } else if (backtestPeriod === 90) {
+                  dvExitThreshold = 0.8;
+                }
+                
+                if (isShort && currDV < -dvExitThreshold) {
                   shouldExit = true;
                   exitReason = "🎯 CORE SIGNAL (DV Short Exit)";
                   exitPrice = curPrice;
-                } else if (!isShort && currDV > 4) {
+                } else if (!isShort && currDV > dvExitThreshold) {
                   shouldExit = true;
                   exitReason = "🎯 CORE SIGNAL (DV Long Exit)";
                   exitPrice = curPrice;
@@ -2879,6 +2918,139 @@ export default function App() {
                         </div>
                       </div>
                     )}
+                  </div>
+                );
+              })()}
+
+              {/* Live Delta Volume & Quantitative Indicators Monitor Panel */}
+              {(() => {
+                const ind = indicatorTrackingRef.current[activeTickerSymbol] as any;
+                if (!ind) return null;
+
+                const rsiVal = ind.rsi || 50;
+                const emaS = ind.emaShort || 100;
+                const emaL = ind.emaLong || 100;
+                const dvVal = ind.dv !== undefined ? ind.dv : 0;
+
+                const buyVolPct = Math.max(0, Math.min(100, 50 + (dvVal * 3.3))); // Scale up for visual effect
+                const sellVolPct = 100 - buyVolPct;
+
+                const emaGap = ((emaS - emaL) / emaL) * 100;
+                const emaCrossState = emaS >= emaL ? "BULLISH" : "BEARISH";
+
+                return (
+                  <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4">
+                    <div>
+                      <h4 className="text-xs font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        MONITOR LIVE DELTA VOLUME & SEGNALI QUANT ({activeTickerSymbol.replace("USDT", "")})
+                      </h4>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Scansione del flusso volumetrico spot e momentum in tempo reale</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Delta Volume Widget */}
+                      <div className="bg-slate-950/50 p-3.5 rounded-xl border border-slate-850 space-y-2.5">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-mono">Delta Volume (DV)</span>
+                          <span className={`text-xs font-mono font-black ${dvVal >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                            {dvVal >= 0 ? "+" : ""}{dvVal.toFixed(2)}%
+                          </span>
+                        </div>
+
+                        {/* Imbalance bar */}
+                        <div className="space-y-1">
+                          <div className="h-2 rounded-full overflow-hidden flex w-full bg-slate-800">
+                            <div className="bg-emerald-500 h-full transition-all duration-300" style={{ width: `${buyVolPct}%` }}></div>
+                            <div className="bg-rose-500 h-full transition-all duration-300" style={{ width: `${sellVolPct}%` }}></div>
+                          </div>
+                          <div className="flex justify-between text-[9px] font-mono text-slate-500">
+                            <span>Taker Buy {buyVolPct.toFixed(0)}%</span>
+                            <span>Taker Sell {sellVolPct.toFixed(0)}%</span>
+                          </div>
+                        </div>
+
+                        {/* State interpretation */}
+                        <p className="text-[9px] text-slate-400 leading-snug">
+                          {dvVal > 4.5 ? (
+                            <span className="text-amber-400 font-bold">⚠️ Forte pressione BUYER (possibile distribuzione se il prezzo non accelera)</span>
+                          ) : dvVal < -4.5 ? (
+                            <span className="text-cyan-400 font-bold">🛡️ Forte pressione SELLER (possibile assorbimento bid)</span>
+                          ) : (
+                            <span>⚖️ Volume bilanciato o assorbimento in range di consolidamento</span>
+                          )}
+                        </p>
+                      </div>
+
+                      {/* RSI Gauge Widget */}
+                      <div className="bg-slate-950/50 p-3.5 rounded-xl border border-slate-850 space-y-2.5">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-mono">RSI Momentum (14)</span>
+                          <span className={`text-xs font-mono font-black ${rsiVal > 70 ? "text-rose-400" : rsiVal < 30 ? "text-emerald-400" : "text-cyan-400"}`}>
+                            {rsiVal.toFixed(1)}
+                          </span>
+                        </div>
+
+                        {/* RSI line with markers */}
+                        <div className="space-y-1">
+                          <div className="relative pt-1">
+                            <div className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500/30 via-slate-800 to-rose-500/30 w-full relative">
+                              {/* Markers for 30 and 70 */}
+                              <div className="absolute left-[30%] top-0 h-full w-0.5 bg-slate-700"></div>
+                              <div className="absolute left-[70%] top-0 h-full w-0.5 bg-slate-700"></div>
+                              {/* Slider head */}
+                              <div 
+                                className={`absolute h-3 w-3 rounded-full -top-[3px] -ml-1.5 border border-slate-950 shadow-md transition-all duration-300 ${rsiVal > 70 ? "bg-rose-500 animate-pulse" : rsiVal < 30 ? "bg-emerald-500 animate-pulse" : "bg-cyan-400"}`}
+                                style={{ left: `${((rsiVal - 15) / 70) * 100}%` }} // Scale from 15 to 85
+                              ></div>
+                            </div>
+                          </div>
+                          <div className="flex justify-between text-[8px] font-mono text-slate-500 pt-0.5">
+                            <span>Oversold (30)</span>
+                            <span>Neutral</span>
+                            <span>Overbought (70)</span>
+                          </div>
+                        </div>
+
+                        <p className="text-[9px] text-slate-400 leading-snug">
+                          {rsiVal > 70 ? (
+                            <span className="text-rose-400 font-bold">🔥 IPERCOMPRATO: fase estesa, possibili storni a breve</span>
+                          ) : rsiVal < 30 ? (
+                            <span className="text-emerald-400 font-bold">❄️ IPERVENDUTO: panico sui retail, potenziale rimbalzo</span>
+                          ) : (
+                            <span>Momentum stabile nella zona neutrale dei prezzi</span>
+                          )}
+                        </p>
+                      </div>
+
+                      {/* EMA Crossover Widget */}
+                      <div className="bg-slate-950/50 p-3.5 rounded-xl border border-slate-850 space-y-2.5">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-mono">Incrocio EMA (9 / 21)</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-black font-mono ${emaCrossState === "BULLISH" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-rose-500/10 text-rose-400 border border-rose-500/20"}`}>
+                            {emaCrossState}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                          <div className="bg-slate-900/40 p-1.5 rounded border border-slate-800">
+                            <span className="text-[9px] text-slate-500 block">Fast EMA (9)</span>
+                            <span className="text-white font-bold">${emaS.toLocaleString(undefined, { minimumFractionDigits: emaS < 10 ? 4 : 2, maximumFractionDigits: emaS < 10 ? 4 : 2 })}</span>
+                          </div>
+                          <div className="bg-slate-900/40 p-1.5 rounded border border-slate-800">
+                            <span className="text-[9px] text-slate-500 block">Slow EMA (21)</span>
+                            <span className="text-white font-bold">${emaL.toLocaleString(undefined, { minimumFractionDigits: emaL < 10 ? 4 : 2, maximumFractionDigits: emaL < 10 ? 4 : 2 })}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between items-center text-[9px] text-slate-400">
+                          <span>Distanza Medie:</span>
+                          <span className={`font-mono font-bold ${emaGap >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                            {emaGap >= 0 ? "+" : ""}{emaGap.toFixed(2)}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 );
               })()}
