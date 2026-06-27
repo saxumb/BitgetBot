@@ -41,6 +41,7 @@ export interface TradingStrategy {
     trailingTakeProfitPercent: number; // e.g. Trailing TP point
     trailingActivationPercent: number; // Level to start trailing
     leverage?: number; // Leverage factor (1x - 10x)
+    useTrendFilter?: boolean; // Enable 50-period EMA trend filter
   };
   aiNotes?: string;
   createdAt: string;

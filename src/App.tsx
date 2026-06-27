@@ -339,6 +339,7 @@ export default function App() {
   const [customTrailActivate, setCustomTrailActivate] = useState<number>(2.0);
   const [customInvestment, setCustomInvestment] = useState<number>(100);
   const [customLeverage, setCustomLeverage] = useState<number>(1);
+  const [customUseTrendFilter, setCustomUseTrendFilter] = useState<boolean>(false);
 
   // Backtest Management Variables
   const [isBacktestOpen, setIsBacktestOpen] = useState<boolean>(false);
@@ -356,7 +357,7 @@ export default function App() {
   
   // Reference tracker for logs to detect new executions for alerts
   const lastLogIdRef = useRef<string | null>(null);
-  const indicatorTrackingRef = useRef<Record<string, { rsi: number; emaShort: number; emaLong: number; dv?: number }>>({});
+  const indicatorTrackingRef = useRef<Record<string, { rsi: number; emaShort: number; emaLong: number; dv?: number; emaTrend?: number }>>({});
   const priceHistoryRef = useRef<Record<string, number[]>>({});
 
   // Calcola la volatilità istantanea (Deviazione Standard % sulle ultime 20 quotazioni)
@@ -461,12 +462,14 @@ export default function App() {
               rsi: 40 + Math.random() * 20,
               emaShort: p,
               emaLong: p,
+              emaTrend: p,
               dv: (Math.random() - 0.5) * 14
             };
           } else {
             const ind = indicatorTrackingRef.current[sym];
             ind.emaShort = ind.emaShort * 0.4 + p * 0.6;
             ind.emaLong = ind.emaLong * 0.6 + p * 0.4;
+            ind.emaTrend = (ind.emaTrend !== undefined ? ind.emaTrend : p) * 0.96 + p * 0.04;
             if (ind.dv === undefined) {
               ind.dv = (Math.random() - 0.5) * 14;
             } else {
@@ -569,7 +572,7 @@ export default function App() {
 
     // Seed indicator tracking ref if empty
     if (Object.keys(indicatorTrackingRef.current).length === 0) {
-      const tracker: Record<string, { rsi: number; emaShort: number; emaLong: number; dv?: number }> = {};
+      const tracker: Record<string, { rsi: number; emaShort: number; emaLong: number; dv?: number; emaTrend?: number }> = {};
       Object.keys(tickers).forEach((sym) => {
         const t = tickers[sym];
         const val = t ? parseFloat(t.lastPr) : 100;
@@ -612,10 +615,11 @@ export default function App() {
           }
 
           // Update indicator tracking ref
-          const ind = indicatorTrackingRef.current[sym] || { rsi: 50, emaShort: newP, emaLong: newP };
+          const ind = indicatorTrackingRef.current[sym] || { rsi: 50, emaShort: newP, emaLong: newP, emaTrend: newP };
           ind.rsi = Math.max(15, Math.min(85, ind.rsi + (Math.random() - 0.5) * 2));
           ind.emaShort = ind.emaShort * 0.95 + newP * 0.05;
           ind.emaLong = ind.emaLong * 0.98 + newP * 0.02;
+          ind.emaTrend = (ind.emaTrend !== undefined ? ind.emaTrend : newP) * 0.96 + newP * 0.04;
           
           if (ind.dv === undefined) {
             ind.dv = (Math.random() - 0.5) * 14;
@@ -1049,6 +1053,15 @@ export default function App() {
                   }
                 }
 
+                if (metBuy && activeStrat.riskManagement.useTrendFilter) {
+                  const tEma = ind.emaTrend !== undefined ? ind.emaTrend : ind.emaLong;
+                  if (isShort && currentPrice >= tEma) {
+                    metBuy = false;
+                  } else if (!isShort && currentPrice <= tEma) {
+                    metBuy = false;
+                  }
+                }
+
                 if (metBuy) {
                   if (!bestCandidate || score > bestCandidate.score) {
                     bestCandidate = {
@@ -1332,7 +1345,8 @@ export default function App() {
         stopLossPercent: customSl,
         trailingTakeProfitPercent: customTrailTp,
         trailingActivationPercent: customTrailActivate,
-        leverage: customLeverage
+        leverage: customLeverage,
+        useTrendFilter: customUseTrendFilter
       },
       indicators: [
         { name: "Fast EMA", type: "EMA", params: { period: 9 }, enabled: true },
@@ -1790,6 +1804,7 @@ export default function App() {
       const fastEma = calcEMA(prices, emaShortPeriod);
       const slowEma = calcEMA(prices, emaLongPeriod);
       const rsi = calcRSI(prices, rsiPeriod);
+      const trendEma = calcEMA(prices, 50); // EMA 50 for the trend filter
 
       let rsiBuyThreshold = 38;
       let rsiSellThreshold = 65;
@@ -1988,6 +2003,15 @@ export default function App() {
             if (curRsi < 40) {
               shouldBuy = true;
               isShort = false;
+            }
+          }
+
+          if (shouldBuy && backtestStrategy.riskManagement.useTrendFilter) {
+            const tEma = trendEma[t] || curPrice;
+            if (isShort && curPrice >= tEma) {
+              shouldBuy = false;
+            } else if (!isShort && curPrice <= tEma) {
+              shouldBuy = false;
             }
           }
 
@@ -2593,6 +2617,31 @@ export default function App() {
                                     className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
                                   />
                                 </div>
+                              </div>
+
+                              <div className="flex items-center justify-between p-2 rounded-lg bg-slate-950 border border-slate-800/40 mt-1">
+                                <div className="flex items-center gap-2 text-[10px] text-slate-300">
+                                  <TrendingUp className="h-4 w-4 text-cyan-400 shrink-0" />
+                                  <div>
+                                    <span className="font-bold block text-white leading-tight text-[10px]">Filtro di Trend (EMA 50)</span>
+                                    <span className="text-[8px] text-slate-500 leading-tight block mt-0.5">LONG solo sopra EMA 50, SHORT sotto</span>
+                                  </div>
+                                </div>
+                                <input 
+                                  type="checkbox" 
+                                  id={`trend-filter-${strat.id}`}
+                                  checked={strat.riskManagement.useTrendFilter || false}
+                                  onChange={(e) => {
+                                    const updated = [...strategies];
+                                    const idx = updated.findIndex(s => s.id === strat.id);
+                                    if (idx !== -1) {
+                                      updated[idx].riskManagement.useTrendFilter = e.target.checked;
+                                      setStrategies(updated);
+                                      handlePersistStrategy(updated[idx]);
+                                    }
+                                  }}
+                                  className="h-3.5 w-3.5 rounded border-slate-800 text-cyan-500 bg-slate-950 focus:ring-cyan-500 cursor-pointer"
+                                />
                               </div>
                             </div>
                           )}
@@ -3353,6 +3402,12 @@ export default function App() {
                             <span>Leva Impostata:</span>
                             <span className="text-cyan-400 font-bold">{strat.riskManagement.leverage || 1}x</span>
                           </div>
+                          <div className="flex justify-between text-slate-400 pt-1">
+                            <span>Filtro Trend (EMA 50):</span>
+                            <span className={strat.riskManagement.useTrendFilter ? "text-cyan-400 font-semibold" : "text-slate-500"}>
+                              {strat.riskManagement.useTrendFilter ? "ATTIVO" : "DISATTIVATO"}
+                            </span>
+                          </div>
                         </div>
 
                         {/* Backtest & Action triggers */}
@@ -3773,6 +3828,23 @@ export default function App() {
                         className="w-full bg-slate-950 text-white rounded-xl p-2 text-[11px] border border-slate-800 outline-none focus:border-cyan-500 font-mono font-bold text-cyan-400"
                       />
                     </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800/40 mt-1">
+                    <div className="flex items-center gap-2 text-[10px] text-slate-300">
+                      <TrendingUp className="h-4 w-4 text-cyan-400 shrink-0" />
+                      <div>
+                        <span className="font-bold block text-white leading-tight text-[10px]">Abilita Filtro di Trend (EMA 50)</span>
+                        <span className="text-[8px] text-slate-500 leading-tight block mt-0.5">LONG solo sopra EMA 50, SHORT solo sotto EMA 50</span>
+                      </div>
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      id="custom-use-trend-filter"
+                      checked={customUseTrendFilter}
+                      onChange={(e) => setCustomUseTrendFilter(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-slate-800 text-cyan-500 bg-slate-950 focus:ring-cyan-500 cursor-pointer"
+                    />
                   </div>
                 </div>
 
