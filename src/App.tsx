@@ -826,48 +826,55 @@ export default function App() {
                     if (srLevels.resistances.length > 0) indicatorRefCast.resistances = srLevels.resistances;
                   }
 
-                  // Find nearest overhead resistance and underfoot support
-                  const overheadResList = indicatorRefCast.resistances.filter((r: number) => r > currentPrice);
-                  const underfootSupList = indicatorRefCast.supports.filter((s: number) => s < currentPrice);
-                  
-                  const nearestRes = overheadResList.length > 0 ? Math.min(...overheadResList) : (currentPrice * 1.015);
-                  const nearestSup = underfootSupList.length > 0 ? Math.max(...underfootSupList) : (currentPrice * 0.985);
+                  // Find if we crossed any resistance or support level
+                  const prevPrice = indicatorRefCast.lastPrices.length >= 2 
+                    ? indicatorRefCast.lastPrices[indicatorRefCast.lastPrices.length - 2] 
+                    : currentPrice * 0.998;
+
+                  const crossedRes = indicatorRefCast.resistances.find((r: number) => prevPrice <= r && currentPrice > r);
+                  const crossedSup = indicatorRefCast.supports.find((s: number) => prevPrice >= s && currentPrice < s);
 
                   const forceLiveBreakout = Math.random() < 0.08; // moderate probability per tick to trigger lively simulation events for the user
 
                   if (indicatorRefCast.srState === "IDLE") {
-                     if (currentPrice > nearestRes || forceLiveBreakout) {
+                     if (crossedRes || forceLiveBreakout) {
                        indicatorRefCast.srState = "BULLISH_BREAKOUT";
-                       indicatorRefCast.breakoutPrice = forceLiveBreakout ? currentPrice * 0.994 : nearestRes;
+                       indicatorRefCast.breakoutPrice = crossedRes || (currentPrice * 0.994);
                        indicatorRefCast.retestTouched = false;
-                     } else if (currentPrice < nearestSup) {
+                     } else if (crossedSup) {
                        indicatorRefCast.srState = "BEARISH_BREAKOUT";
-                       indicatorRefCast.breakoutPrice = nearestSup;
+                       indicatorRefCast.breakoutPrice = crossedSup;
                        indicatorRefCast.retestTouched = false;
                      }
                   } else if (indicatorRefCast.srState === "BULLISH_BREAKOUT") {
                      const bk = indicatorRefCast.breakoutPrice;
                      if (currentPrice < bk * 0.992) {
+                       // Failed retest (broke back below support)
                        indicatorRefCast.srState = "IDLE";
-                     } else if (currentPrice >= bk * 0.997 && currentPrice <= bk * 1.003) {
+                     } else if (currentPrice <= bk * 1.006 && currentPrice >= bk * 0.994) {
+                       // Price enters retest zone
                        indicatorRefCast.retestTouched = true;
-                     } else if (indicatorRefCast.retestTouched && currentPrice > bk * 1.001) {
+                     } else if (indicatorRefCast.retestTouched && currentPrice > bk * 1.002) {
+                       // Successful retest and bounce!
                        metBuy = true;
                        isShort = false;
-                       triggerDetails = `S/R Flip: Resistenza Rotta $${bk.toFixed(2)} testata come Supporto senza perforazione e rimbalzata (Retest ok!)`;
+                       triggerDetails = `S/R Flip: Resistenza Rotta $${bk.toFixed(2)} testata come Supporto senza perforazione e rimbalzata (Retest confermato)`;
                        score = 10;
                        indicatorRefCast.srState = "IDLE";
                      }
                   } else if (indicatorRefCast.srState === "BEARISH_BREAKOUT") {
                      const bk = indicatorRefCast.breakoutPrice;
                      if (currentPrice > bk * 1.008) {
+                       // Failed retest (broke back above resistance)
                        indicatorRefCast.srState = "IDLE";
-                     } else if (currentPrice <= bk * 1.003 && currentPrice >= bk * 0.997) {
+                     } else if (currentPrice <= bk * 1.006 && currentPrice >= bk * 0.994) {
+                       // Price enters retest zone
                        indicatorRefCast.retestTouched = true;
-                     } else if (indicatorRefCast.retestTouched && currentPrice < bk * 0.999) {
+                     } else if (indicatorRefCast.retestTouched && currentPrice < bk * 0.998) {
+                       // Successful retest and rejection!
                        metBuy = true;
                        isShort = true;
-                       triggerDetails = `S/R Flip: Supporto Rotto $${bk.toFixed(2)} testato come Resistenza senza superamento e respinto (Retest ok!)`;
+                       triggerDetails = `S/R Flip: Supporto Rotto $${bk.toFixed(2)} testato come Resistenza senza superamento e respinto (Retest confermato)`;
                        score = 10;
                        indicatorRefCast.srState = "IDLE";
                      }
@@ -1761,44 +1768,61 @@ export default function App() {
           let isShort = false;
 
           if (buyCond === "BREAKOUT_RETEST_SR") {
-            const historicalSlice = prices.slice(0, t + 1);
+            const historicalSlice = prices.slice(0, t);
             const srLevels = calculateSRLevels(historicalSlice);
             
-            const overhead = srLevels.resistances.filter(r => r > curPrice);
-            const underfoot = srLevels.supports.filter(s => s < curPrice);
+            let resistancesList = srLevels.resistances;
+            let supportsList = srLevels.supports;
             
-            const nearestRes = overhead.length > 0 ? Math.min(...overhead) : (curPrice * 1.015);
-            const nearestSup = underfoot.length > 0 ? Math.max(...underfoot) : (curPrice * 0.985);
+            // Seed levels if empty or very few, to ensure we always have structure to break out of
+            if (resistancesList.length === 0) {
+              const startPrice = prices[0] || curPrice;
+              resistancesList = [startPrice * 1.015, startPrice * 1.03, startPrice * 1.05];
+            }
+            if (supportsList.length === 0) {
+              const startPrice = prices[0] || curPrice;
+              supportsList = [startPrice * 0.985, startPrice * 0.97, startPrice * 0.95];
+            }
+
+            const prevPrice = t > 0 ? prices[t - 1] : curPrice * 0.998;
+            const crossedRes = resistancesList.find(r => prevPrice <= r && curPrice > r);
+            const crossedSup = supportsList.find(s => prevPrice >= s && curPrice < s);
 
             if (srState === 'IDLE') {
-              if (curPrice > nearestRes) {
+              if (crossedRes) {
                 srState = 'BULLISH_BREAKOUT';
-                srBreakoutPrice = nearestRes;
+                srBreakoutPrice = crossedRes;
                 srRetestTouched = false;
-              } else if (curPrice < nearestSup) {
+              } else if (crossedSup) {
                 srState = 'BEARISH_BREAKOUT';
-                srBreakoutPrice = nearestSup;
+                srBreakoutPrice = crossedSup;
                 srRetestTouched = false;
               }
             } else if (srState === 'BULLISH_BREAKOUT') {
-              if (curPrice < srBreakoutPrice * 0.994) {
-                srState = 'IDLE';
-              } else if (curPrice >= srBreakoutPrice * 0.998 && curPrice <= srBreakoutPrice * 1.004) {
-                srRetestTouched = true;
-              } else if (srRetestTouched && curPrice > srBreakoutPrice * 1.002) {
+              const R = srBreakoutPrice;
+              if (curPrice < R * 0.992) {
+                srState = 'IDLE'; // Broken below support - breakout failed
+              } else if (curLow <= R * 1.006 && curPrice >= R * 0.994) {
+                srRetestTouched = true; // Retest of level as support
+              }
+              
+              if (srRetestTouched && curPrice > R * 1.002) {
                 shouldBuy = true;
                 isShort = false;
-                srState = 'IDLE';
+                srState = 'IDLE'; // Successfully bought on retest bounce!
               }
             } else if (srState === 'BEARISH_BREAKOUT') {
-              if (curPrice > srBreakoutPrice * 1.006) {
-                srState = 'IDLE';
-              } else if (curPrice <= srBreakoutPrice * 1.002 && curPrice >= srBreakoutPrice * 0.996) {
-                srRetestTouched = true;
-              } else if (srRetestTouched && curPrice < srBreakoutPrice * 0.998) {
+              const S = srBreakoutPrice;
+              if (curPrice > S * 1.008) {
+                srState = 'IDLE'; // Broken above resistance - breakout failed
+              } else if (curHigh >= S * 0.994 && curPrice <= S * 1.006) {
+                srRetestTouched = true; // Retest of level as resistance
+              }
+              
+              if (srRetestTouched && curPrice < S * 0.998) {
                 shouldBuy = true;
                 isShort = true;
-                srState = 'IDLE';
+                srState = 'IDLE'; // Successfully shorted on retest rejection!
               }
             }
           } else if (backtestStrategy.buyTriggerCondition.toUpperCase().includes("DV")) {
